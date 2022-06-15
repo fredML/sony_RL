@@ -4,7 +4,6 @@ from space_carving import *
 import random
 import collections
 from math import prod
-from scipy.ndimage import sobel
 
 TimeStep = collections.namedtuple("TimeStep", field_names=["step_type", "reward", "discount", "observation"])
 
