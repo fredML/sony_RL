@@ -1,0 +1,8 @@
+*.pyc
+*.py~
+*__pychache__*
+*.npz
+*.json
+*.ipynb
+*.py#
+*.ipynb#
