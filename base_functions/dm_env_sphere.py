@@ -12,6 +12,9 @@ class SphereEnv(dm_env.Environment):
         #self.__version__ = "7.0.1"
         self.objects_path = objects_path
         self.voxel_weights = voxel_weights
+        self.spc = space_carving_rotation_2d(self.objects_path,
+                                             voxel_weights=self.voxel_weights,
+                                             continuous=True)
 
     def reset(self, phi_init=-1, theta_init=-1) -> dm_env.TimeStep: 
         self.num_steps = 0
@@ -40,8 +43,7 @@ class SphereEnv(dm_env.Environment):
         self.visited_positions.append([self.current_theta, self.current_phi])
 
         # create space carving objects
-        self.spc = space_carving_rotation_2d(self.objects_path,
-                                             voxel_weights=self.voxel_weights)
+        self.spc.reset()
         # carve image from initial position
         self.spc.continuous_carve(self.current_phi, self.current_theta)
 
@@ -54,7 +56,8 @@ class SphereEnv(dm_env.Environment):
         return dm_env.restart(observation)
 
 
-    def step(self, phi, theta) -> dm_env.TimeStep:
+    def step(self, action) -> dm_env.TimeStep:
+        phi, theta = action
         self.num_steps += 1
         self.current_theta += theta
         if self.current_theta > np.pi/2:

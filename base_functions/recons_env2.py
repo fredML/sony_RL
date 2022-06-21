@@ -3,7 +3,7 @@ import os
 from space_carving import *
 import random
 import collections
-from math import prod
+from utils import angle_to_position
 
 TimeStep = collections.namedtuple("TimeStep", field_names=["step_type", "reward", "discount", "observation"])
 
@@ -12,7 +12,7 @@ class ScannerEnv():
     Custom OpenAI Gym environment  for training 3d scannner
     """
 
-    def __init__(self, objects_path, train_objects, cube_view='static', voxel_weights = None):
+    def __init__(self, objects_path, train_objects, voxel_weights = None):
 
         super(ScannerEnv, self).__init__()
         #self.__version__ = "7.0.1"
@@ -24,9 +24,6 @@ class ScannerEnv():
         self.theta_n_positions = 4
         # 3d objects used for training
         self.train_objects = train_objects
-        # if static, figure in cube is always seen from the same perspective
-        # if dynamic, position figure in cube rotates according to the camera perspective
-        self.cube_view = cube_view
 
         # images
         self.images_shape = (84, 84, 3)
@@ -47,7 +44,7 @@ class ScannerEnv():
         self.voxel_weights = voxel_weights
         self.num_actions = len(self.actions)
 
-    def reset(self, phi_init=-1, theta_init=-1, phi_bias=0):
+    def reset(self, phi_init=-1, theta_init=-1):
         self.num_steps = 0
         self.total_reward = 0
         self.done = False
@@ -71,12 +68,6 @@ class ScannerEnv():
         else:
             self.current_theta = self.init_theta
 
-        # simulates rotation of objects (z axis) by n steps (for data augmentation), -1 for random rotation
-        if phi_bias == -1:
-            self.phi_bias = np.random.randint(0, self.phi_n_positions)
-        else:
-            self.phi_bias = phi_bias
-
         # append initial position to visited positions list
         self.visited_positions.append((self.current_theta, self.current_phi))
 
@@ -86,15 +77,11 @@ class ScannerEnv():
 
         # create space carving objects
         self.spc = space_carving_rotation_2d(os.path.join(self.objects_path, object),
-                                             phi_bias=self.phi_bias,
                                              total_phi_positions=self.phi_n_positions,
-                                             cube_view='static', voxel_weights=self.voxel_weights)
+                                             voxel_weights=self.voxel_weights, continuous=False)
         # carve image from initial position
         self.spc.carve(self.current_phi, self.current_theta)
         vol = self.spc.last_volume
-
-        self.volume_shape = vol.shape
-        self.last_gt_ratio = 0
 
         # get camera image
         self.im3 = np.array(self.spc.get_image(self.current_phi, self.current_theta))[...,:3]/255
@@ -107,9 +94,7 @@ class ScannerEnv():
         self.last_gt_ratio = gt_ratio
         self.reward = gt_ratio
                 
-        pos = np.array([np.cos(self.current_phi*np.pi/180)*np.sin((self.current_theta+1)*np.pi/8),
-                        np.sin(self.current_phi*np.pi/180)*np.sin((self.current_theta+1)*np.pi/8),
-                        np.cos((self.current_theta+1)*np.pi/8)])
+        pos = angle_to_position(self.current_phi, self.current_theta)
 
         self.last_k_pos = np.concatenate((pos,pos,pos))
         observation = self.last_k_pos
@@ -154,9 +139,7 @@ class ScannerEnv():
         self.reward = delta_gt_ratio'''
         self.reward = self.spc.gt_compare()
 
-        pos = np.array([np.cos(self.current_phi*np.pi/180)*np.sin((self.current_theta+1)*np.pi/8),
-                        np.sin(self.current_phi*np.pi/180)*np.sin((self.current_theta+1)*np.pi/8),
-                        np.cos((self.current_theta+1)*np.pi/8)])
+        pos = angle_to_position(self.current_phi, self.current_theta)
 
         #dist_penalty = np.linalg.norm(pos-self.last_pos)
 
@@ -171,36 +154,27 @@ class ScannerEnv():
         return TimeStep(step_type=self.done, reward=self.reward, discount=self.discount, observation=observation)
 
 
-    def step_angle(self, theta, phi):
+    def step_continuous(self, phi, theta):
         self.num_steps += 1
-        self.current_phi = phi
-        self.current_theta = theta
-        self.visited_positions.append([self.current_phi, self.current_theta]) 
+        self.current_theta += theta
+        self.current_phi += phi
+        self.visited_positions.append([self.current_theta,self.current_phi])
 
-        self.spc.carve(self.current_phi, self.current_theta)
-        vol = self.spc.last_volume
+        self.spc.continuous_carve(self.current_phi, self.current_theta)
 
-        im = np.array(self.spc.get_image(self.current_phi, self.current_theta))
-        self.im3 = np.stack([self.im3[:, :, 1], self.im3[:, :, 2], im], axis=-1)
+        self.reward = self.spc.gt_compare()
 
-        if self.gt_mode:
-            gt_ratio = self.spc.gt_compare()
-            delta_gt_ratio = gt_ratio - self.last_gt_ratio
-            self.last_gt_ratio = gt_ratio
-            reward = delta_gt_ratio
-        
-        else:
-            _, self.voxel_count = np.unique(vol,return_counts=True)
-            reward =  (self.last_voxel_count - self.voxel_count)[1]/prod(self.volume_shape)
+        pos = angle_to_position(self.current_phi, self.current_theta)
+        self.last_k_pos = np.concatenate((self.last_k_pos[3:],pos))
 
-            self.last_voxel_count = self.voxel_count
+        self.total_reward += self.reward
+        observation = self.last_k_pos
 
-        self.total_reward += reward
+        if self.total_reward > 0.3:
+            self.done = True
 
-        self.current_state = (self.im3,
-                              vol.astype('float32')[...,None])
+        return TimeStep(step_type=self.done, reward=self.reward, discount=self.discount, observation=observation)
 
-        return TimeStep(step_type=self.done, reward=reward, discount=self.discount, observation=self.im3/255)
 
     def generate_gt(self):
         for theta in range(self.theta_n_positions):

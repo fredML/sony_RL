@@ -1,4 +1,3 @@
-
 import haiku as hk
 import jax 
 from typing import *

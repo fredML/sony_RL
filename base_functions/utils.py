@@ -25,6 +25,11 @@ def get_mask(img):
     mask = 1 - mask_inv
     return 255*mask
 
+def get_mask_black(img):
+    mask = np.all((img == [0,0,0]), axis=-1)
+    mask = 1 - mask
+    return 255*mask
+
 def get_frame(img):
     img = np.array(img)[:, :, :3]
     mask1 = np.all((img == [70, 70, 70]), axis=-1)

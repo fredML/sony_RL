@@ -7,13 +7,13 @@ from PIL import Image, ImageOps
 import glob
 import os
 from copy import deepcopy
-from utils import angle_to_position_continuous, get_mask, set_sc, make_extrinsics
+from utils import angle_to_position_continuous, get_mask_black, set_sc, make_extrinsics
 
 class space_carving_rotation_2d():
     def __init__(self, model_path, total_phi_positions=None, voxel_weights=None, continuous=True):
 
         self.camera_model = json.load(
-                open(os.path.join(model_path, 'old_camera_model.json')))
+                open(os.path.join(model_path, 'camera_model.json')))
 
         self.intrinsics = self.camera_model['params'][0:4]
         
@@ -34,12 +34,14 @@ class space_carving_rotation_2d():
         else:
             self.voxel_weights = np.ones(self.vol_shape)
 
-        if continuous:
+        self.continuous = continuous
+
+        if self.continuous:
             path = os.getcwd()
             os.chdir('/mnt/diskSustainability/frederic/rlviewer')
             os.environ['DISPLAY'] = ':1'
             import rlviewer
-            os.chdir(path)
+            #os.chdir(path)
 
             rlviewer.load(os.path.join(model_path,'sphere.obj')) 
             rlviewer.set_light(0, 120, 0, 0, 5000) 
@@ -139,10 +141,13 @@ class space_carving_rotation_2d():
         self.last_volume = deepcopy(volume)
 
     def continuous_carve(self, phi, theta):
+        assert self.continuous, "continuous settings only"
+        import rlviewer
         img = rlviewer.grab(self.radius, theta-np.pi/2, phi) 
-        img = resize(img, (256,256), preserve_range=True)
         self.img = img
-        mask = get_mask(img)
+        mask = get_mask_black(img)
+        self.mask = mask
+        img = resize(img, (256,256))
         extrinsics = make_extrinsics(self.radius, angle_to_position_continuous(phi,theta))
         self.extrinsics = extrinsics
         self.space_carve(mask, self.extrinsics)
