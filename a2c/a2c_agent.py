@@ -2,9 +2,11 @@ from a2c_network import PolicyNetwork, ValueNetwork
 
 import os
 path = os.getcwd()
-os.chdir('/mnt/diskSustainability/frederic/RL_NBV/recons/base_functions')
+os.chdir('/mnt/diskSustainability/frederic/sony_RL/base_functions')
 
-from data import LearnerState, Trajectory, Transition
+from data import LearnerState, Transition
+os.chdir(path)
+
 import chex
 from acme import types
 from typing import *
@@ -17,8 +19,6 @@ import abc
 import rlax
 import functools
 
-os.chdir(path)
-
 LogsDict = Mapping[str, chex.Array]
 
 
@@ -26,7 +26,7 @@ LogsDict = Mapping[str, chex.Array]
 # and to update its potential parameters.
 class Agent(abc.ABC):
     @abc.abstractmethod
-    def learner_step(self, trajectory: Trajectory) -> Mapping[str, chex.ArrayNumpy]:
+    def learner_step(self, transition: Transition) -> Mapping[str, chex.ArrayNumpy]:
         """One step of learning on a trajectory.
 
         The mapping returned can contain various logs.
@@ -39,7 +39,7 @@ class A2CAgent(Agent):
         self._rng = jax.random.PRNGKey(seed=seed)
         self._init_loss, apply_loss = hk.without_apply_rng(
             hk.transform(self._loss_function))
-        self._grad = jax.value_and_grad(apply_loss, has_aux=True)
+        self._grad = jax.grad(apply_loss, has_aux=True)
         _, self._apply_policy = hk.without_apply_rng(
             hk.transform(self._hk_apply_policy))
         _, self._apply_value = hk.without_apply_rng(
@@ -66,16 +66,16 @@ class A2CAgent(Agent):
         return LearnerState(params=params, opt_state=opt_state)
 
     def _update_fn(self, learner_state: LearnerState, transition: Transition) -> Tuple[LearnerState, LogsDict]:
-        (loss, aux), grads = self._grad(learner_state.params, transition)
+        grads, aux = self._grad(learner_state.params, transition)
         updates, new_opt_state = self._optimizer.update(
             grads, learner_state.opt_state)
         new_params = optax.apply_updates(learner_state.params, updates)
-        return LearnerState(params=new_params, opt_state=new_opt_state), aux, loss, grads
+        return LearnerState(params=new_params, opt_state=new_opt_state), aux
 
     def learner_step(self, transition: Transition) -> Mapping[str, chex.ArrayNumpy]:
-        self._learner_state, logs, loss, grads = self.update_fn(
+        self._learner_state, logs = self.update_fn(
             self._learner_state, transition)
-        return logs, loss, grads
+        return logs
     
     def _actor_step(self, params, rng: chex.PRNGKey, observations: types.NestedArray, for_eval: bool = False) -> types.NestedArray:
         mu, sigma = self.apply_policy(params, observations)
@@ -93,19 +93,17 @@ class A2CAgent(Agent):
 
     def _generate_dummy_transition(self) -> Transition:
 
-        #observation = jnp.array(np.random.uniform(0, 1, (1)+self._env_shape), dtype=jnp.float32)
-        observation = (jnp.array(np.random.uniform(0, 1, (1,)+self._env_shape), dtype=jnp.float32),
-        jnp.array(np.random.uniform(0, 1, (1,)+(64,64,64,1)), dtype=jnp.float32))
+        observation = jnp.array(np.random.uniform(-1, 1, self._env_shape), dtype=jnp.float32)
 
-        action = jnp.array(np.random.uniform(-1, 1, (1,2)), dtype=jnp.float32)
+        action = jnp.array(np.random.uniform(-1, 1, self._action_shape), dtype=jnp.float32)
 
         return Transition(
-            obs_tm1=observation,
+            obs_tm1=observation[None],
             action_tm1=action,
-            reward_t=0,
-            discount_t=1,
-            obs_t=observation,
-            done=False)
+            reward_t=jnp.zeros(1),
+            discount_t=jnp.zeros(1),
+            obs_t=observation[None],
+            done=jnp.zeros(1))
 
 
     def _hk_apply_value(self, observations: types.NestedArray):
@@ -118,9 +116,8 @@ class A2CAgent(Agent):
         # inputs are assumed to be provided such that the full sequence that we get is
         # o_0 a_0 r_0 d_0, ...., o_T, a_T, r_T, d_T
         mu, sigma = PolicyNetwork(self._action_shape)(transition.obs_tm1)
-        obs = (jnp.concatenate((transition.obs_tm1[0],transition.obs_t[0][-1][None]),axis=0),
-               jnp.concatenate((transition.obs_tm1[1],transition.obs_t[1][-1][None]),axis=0))
-        #obs = jnp.concatenate((transition.obs_tm1,transition.obs_t[-1]]),axis=0)
+
+        obs = jnp.concatenate((transition.obs_tm1, transition.obs_t[-1:]),axis=0)
 
         '''values_tm1 = ValueNetwork()(transition.obs_tm1)
         values = ValueNetwork()(transition.obs_t)
@@ -133,8 +130,8 @@ class A2CAgent(Agent):
           in_axes=1,
           out_axes=1)
         value_targets = batched_return_fn(
-          transition.reward_t,
-          (self._gamma * transition.discount_t * (1. - transition.done)),
+          transition.reward_t[...,None],
+          (self._gamma * transition.discount_t[...,None] * (1. - transition.done[...,None])),
           values[1:],
           )
 

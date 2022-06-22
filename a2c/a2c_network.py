@@ -5,6 +5,26 @@ import chex
 from typing import *
 from math import prod
 
+class ValueNetwork(hk.Module):
+  def __init__(self, name: Optional[str] = None) -> None:
+    super().__init__(name=name)
+
+  def __call__(self, s: chex.Array) -> chex.Array:
+    return hk.nets.MLP([32,32,32,1])(s)[...,0]
+
+class PolicyNetwork(hk.Module):
+  def __init__(self, action_shape, name: Optional[str] = None) -> None:
+    super().__init__(name=name)
+    self.action_shape = action_shape
+
+  def __call__(self, s: chex.Array ) -> Tuple[chex.Array, chex.Array]:
+    action_dims = prod(self.action_shape)
+    h = hk.nets.MLP([32,32,32, 2 * action_dims])(s)
+    h = jax.nn.tanh(h)
+    mu, sigma = jnp.split(h, 2, axis=-1)
+    sigma = jax.nn.softplus(sigma)
+    return 0.1*mu, 0.1*sigma
+
 '''class ValueNetwork(hk.Module):
   def __init__(self, name: Optional[str] = None) -> None:
     super().__init__(name=name)
@@ -46,7 +66,7 @@ class PolicyNetwork(hk.Module):
     sigma = jax.nn.softplus(sigma)
     return mu, sigma'''
 
-class ValueNetwork(hk.Module):
+'''class ValueNetwork(hk.Module):
   def __init__(self, name: Optional[str] = None) -> None:
     super().__init__(name=name)
 
@@ -121,4 +141,4 @@ class PolicyNetwork(hk.Module):
     h = jax.nn.tanh(h)
     mu, sigma = jnp.split(h, 2, axis=-1)
     sigma = jax.nn.softplus(sigma)
-    return mu, sigma
+    return mu, sigma'''
