@@ -76,12 +76,12 @@ def make_extrinsics(radius, pos):
 
     return {'R':R.tolist(), 'T':T.tolist()}
 
-def angle_to_position(phi, theta):
+def angle_to_position(theta, phi):
     return np.array([np.cos(2*phi*np.pi/180)*np.sin((theta+1)*np.pi/8),
                     np.sin(2*phi*np.pi/180)*np.sin((theta+1)*np.pi/8),
                     np.cos((theta+1)*np.pi/8)])
 
-def angle_to_position_continuous(phi, theta):
+def angle_to_position_continuous(theta, phi):
     return np.array([np.cos(phi)*np.sin(theta),
                      np.sin(phi)*np.sin(theta),
                      np.cos(theta)])

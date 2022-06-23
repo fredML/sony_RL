@@ -9,6 +9,12 @@ import os
 from copy import deepcopy
 from utils import angle_to_position_continuous, get_mask_black, set_sc, make_extrinsics
 
+path = os.getcwd()
+os.chdir('/mnt/diskSustainability/frederic/rlviewer')
+os.environ['DISPLAY'] = ':1'
+import rlviewer
+os.chdir(path)
+
 class space_carving_rotation_2d():
     def __init__(self, model_path, total_phi_positions=None, voxel_weights=None, continuous=True):
 
@@ -37,12 +43,6 @@ class space_carving_rotation_2d():
         self.continuous = continuous
 
         if self.continuous:
-            path = os.getcwd()
-            os.chdir('/mnt/diskSustainability/frederic/rlviewer')
-            os.environ['DISPLAY'] = ':1'
-            import rlviewer
-            #os.chdir(path)
-
             rlviewer.load(os.path.join(model_path,'sphere.obj')) 
             rlviewer.set_light(0, 120, 0, 0, 5000) 
             rlviewer.set_light(1, -120, 0, 0, 5000) 
@@ -114,11 +114,11 @@ class space_carving_rotation_2d():
         return ext
 
     def load_mask(self, idx):
-        img = cv2.imread(self.masks_files[idx], cv2.IMREAD_GRAYSCALE)
-        self.mask = img
-        return img
+        mask = cv2.imread(self.masks_files[idx], cv2.IMREAD_GRAYSCALE)
+        self.mask = mask
+        return mask
     
-    def get_image(self, phi, theta):
+    def get_image(self, theta, phi):
         image_idx = (self.total_phi_positions * theta) + phi
         img = Image.open(self.img_files[image_idx])
         cp = img.copy()
@@ -128,7 +128,7 @@ class space_carving_rotation_2d():
 
         return cp
 
-    def carve(self, phi, theta):
+    def carve(self, theta, phi):
         '''space carve in position theta(rows),phi(cols)
         theta and phi are steps of the scanner, not angles'''
    
@@ -140,15 +140,13 @@ class space_carving_rotation_2d():
         self.carved_voxels = ((volume == -1) & (self.last_volume != -1))*self.voxel_weights
         self.last_volume = deepcopy(volume)
 
-    def continuous_carve(self, phi, theta):
+    def continuous_carve(self, theta, phi):
         assert self.continuous, "continuous settings only"
-        import rlviewer
         img = rlviewer.grab(self.radius, theta-np.pi/2, phi) 
         self.img = img
         mask = get_mask_black(img)
         self.mask = mask
-        img = resize(img, (256,256))
-        extrinsics = make_extrinsics(self.radius, angle_to_position_continuous(phi,theta))
+        extrinsics = make_extrinsics(self.radius, angle_to_position_continuous(theta, phi))
         self.extrinsics = extrinsics
         self.space_carve(mask, self.extrinsics)
 

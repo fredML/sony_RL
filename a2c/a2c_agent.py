@@ -10,7 +10,6 @@ os.chdir(path)
 import chex
 from acme import types
 from typing import *
-import numpy as np
 import jax
 import jax.numpy as jnp
 import optax
@@ -93,9 +92,8 @@ class A2CAgent(Agent):
 
     def _generate_dummy_transition(self) -> Transition:
 
-        observation = jnp.array(np.random.uniform(-1, 1, self._env_shape), dtype=jnp.float32)
-
-        action = jnp.array(np.random.uniform(-1, 1, self._action_shape), dtype=jnp.float32)
+        observation = jax.random.uniform(key=self._rng, minval=-1, maxval=1, shape=self._env_shape, dtype=jnp.float32)
+        action = jax.random.uniform(key=self._rng, minval=-1, maxval=1, shape=self._action_shape, dtype=jnp.float32)
 
         return Transition(
             obs_tm1=observation[None],
@@ -117,7 +115,7 @@ class A2CAgent(Agent):
         # o_0 a_0 r_0 d_0, ...., o_T, a_T, r_T, d_T
         mu, sigma = PolicyNetwork(self._action_shape)(transition.obs_tm1)
 
-        obs = jnp.concatenate((transition.obs_tm1, transition.obs_t[-1:]),axis=0)
+        obs = jnp.concatenate((transition.obs_tm1, transition.obs_t[-1:]), axis=0)
 
         '''values_tm1 = ValueNetwork()(transition.obs_tm1)
         values = ValueNetwork()(transition.obs_t)
@@ -125,7 +123,7 @@ class A2CAgent(Agent):
 
         values = ValueNetwork()(obs)
 
-        batched_return_fn = jax.vmap(
+        '''batched_return_fn = jax.vmap(
           functools.partial(rlax.lambda_returns, stop_target_gradients=True),
           in_axes=1,
           out_axes=1)
@@ -133,17 +131,14 @@ class A2CAgent(Agent):
           transition.reward_t[...,None],
           (self._gamma * transition.discount_t[...,None] * (1. - transition.done[...,None])),
           values[1:],
-          )
+          )'''
 
-        '''value_targets = transition.reward_t + \
-            (self._gamma * transition.discount_t * (1. - transition.done))*values[1:]'''
+        value_targets = jax.lax.stop_gradient(transition.reward_t +
+            (self._gamma * transition.discount_t * (1. - transition.done))*values[1:])
         value_loss = jnp.mean(.5 * jnp.square(values[:-1] - value_targets))
 
-        sg_advantages = jax.lax.stop_gradient(value_targets - values[:-1])
+        sg_advantages = value_targets - values[:-1]
         action_log_probs = rlax.gaussian_diagonal().logprob(transition.action_tm1, mu, sigma)
-        #action_probs = PolicyNetwork(self._num_actions)(transition.obs_tm1)
-        #action_log_probs = jnp.log(batched_indexing(
-        #    action_probs, jnp.int16(transition.action_tm1)))
         entropies = rlax.gaussian_diagonal().entropy(mu, sigma)
         entropy_loss = -jnp.mean(entropies)
         policy_loss = -jnp.mean(sg_advantages * action_log_probs)
@@ -156,7 +151,5 @@ class A2CAgent(Agent):
                     value_mean=values.mean(),
                     value_target_mean=value_targets.mean(),
                     mean_reward=transition.reward_t.mean(),
-                    mu = mu.mean(),
-                    sigma = sigma.mean()
                     )
         return value_loss + policy_loss, logs
