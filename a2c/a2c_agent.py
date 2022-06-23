@@ -16,7 +16,6 @@ import optax
 import haiku as hk
 import abc
 import rlax
-import functools
 
 LogsDict = Mapping[str, chex.Array]
 
@@ -34,7 +33,7 @@ class Agent(abc.ABC):
 
 
 class A2CAgent(Agent):
-    def __init__(self, seed: int, learning_rate: float, gamma: float, entropy_loss_coef: float, env_shape: tuple, action_shape: tuple) -> None:
+    def __init__(self, seed: int, learning_rate: float, gamma: float, entropy_loss_coef: float, environment_spec) -> None:
         self._rng = jax.random.PRNGKey(seed=seed)
         self._init_loss, apply_loss = hk.without_apply_rng(
             hk.transform(self._loss_function))
@@ -46,8 +45,9 @@ class A2CAgent(Agent):
 
         self._entropy_loss_coef = entropy_loss_coef
         self._gamma = gamma
-        self._action_shape = action_shape
-        self._env_shape = env_shape
+        self._environment_spec = environment_spec
+        self._action_shape = self._environment_spec.actions.shape
+        self._env_shape = self._environment_specs.observations.shape
 
         self._optimizer = optax.adam(learning_rate=learning_rate)
         self.init_fn = jax.jit(self._init_fn)

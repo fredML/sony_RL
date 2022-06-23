@@ -124,4 +124,4 @@ class SphereEnv(dm_env.Environment):
         return specs.BoundedArray(shape=(9,), minimum=-1., maximum=1., dtype=np.float32)
 
     def action_spec(self) -> specs.BoundedArray:
-        return specs.BoundedArray(shape=(2,), minimum=-[np.pi/4, np.pi], maximum=[np.pi/4, np.pi], dtype=np.float32)
+        return specs.BoundedArray(shape=(1,2), minimum=-np.pi*np.array([1/4, 1]), maximum=np.pi*np.array([1/4, 1]), dtype=np.float32)
