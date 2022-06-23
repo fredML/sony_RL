@@ -56,7 +56,7 @@ class A2CAgent(Agent):
         self.apply_value = jax.jit(self._apply_value)
 
         self._rng, init_rng = jax.random.split(self._rng)
-        self._learner_state = self._init_fn(
+        self._learner_state = self.init_fn(
             init_rng, self._generate_dummy_transition())
 
     def _init_fn(self, rng: chex.PRNGKey, transition: Transition) -> LearnerState:

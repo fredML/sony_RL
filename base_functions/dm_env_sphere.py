@@ -7,15 +7,17 @@ from utils import angle_to_position_continuous
 
 class SphereEnv(dm_env.Environment):
 
-    def __init__(self, objects_path, voxel_weights=None):
+    def __init__(self, objects_path, voxel_weights=None, rmax=0.3, k_d=0.1, k_t=0):
 
         super(SphereEnv, self).__init__()
-        #self.__version__ = "7.0.1"
         self.objects_path = objects_path
         self.voxel_weights = voxel_weights
         self.spc = space_carving_rotation_2d(self.objects_path,
                                              voxel_weights=self.voxel_weights,
                                              continuous=True)
+        self.max_reward = rmax
+        self.k_d = k_d #penalty based on distance between two camera positions
+        self.k_t = k_t #penalty based on number of views
 
     def reset(self, theta_init=-1, phi_init=-1) -> dm_env.TimeStep:
         self.num_steps = 0
@@ -45,9 +47,6 @@ class SphereEnv(dm_env.Environment):
 
         # create space carving objects
         self.spc.reset()
-        # carve image from initial position
-        '''self.spc.continuous_carve(self.current_theta, self.current_phi)
-        self.reward = self.spc.gt_compare()'''
 
         pos = angle_to_position_continuous(
             self.current_theta, self.current_phi)
@@ -81,12 +80,18 @@ class SphereEnv(dm_env.Environment):
 
         pos = angle_to_position_continuous(
             self.current_theta, self.current_phi)
+        self.penalty = np.linalg.norm(pos-self.last_k_pos[-3:])
         self.last_k_pos = np.concatenate((self.last_k_pos[3:], pos))
 
         self.total_reward += self.reward
+        if self.reward > 0:
+            self.reward -= self.k_d*self.penalty
+        else:
+            self.reward = -self.k_t
+
         observation = self.last_k_pos
 
-        if self.total_reward > 0.3:
+        if self.total_reward > self.max_reward:
             return dm_env.termination(reward=self.reward, observation=observation)
 
         return dm_env.transition(reward=self.reward, observation=observation)
@@ -111,7 +116,7 @@ class SphereEnv(dm_env.Environment):
         observation = self.last_k_pos
 
         if self.total_reward > 0.3:
-            dm_env.termination(reward=self.reward, observation=observation)
+            return dm_env.termination(reward=self.reward, observation=observation)
 
         return dm_env.transition(reward=self.reward, observation=observation)
 
