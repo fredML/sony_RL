@@ -115,7 +115,7 @@ class SphereEnv(dm_env.Environment):
         self.total_reward += self.reward
         observation = self.last_k_pos
 
-        if self.total_reward > 0.3:
+        if self.total_reward > self.max_reward:
             return dm_env.termination(reward=self.reward, observation=observation)
 
         return dm_env.transition(reward=self.reward, observation=observation)

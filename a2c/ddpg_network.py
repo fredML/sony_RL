@@ -10,7 +10,12 @@ class ValueNetwork(hk.Module):
     super().__init__(name=name)
 
   def __call__(self, s: chex.Array, a: chex.Array) -> chex.Array:
-    return hk.nets.MLP([32,32,32,1])(jnp.concatenate((s,a), axis=1))[...,0]
+    h = s
+    h = hk.Linear(400)(h)
+    h = jax.nn.relu(h)
+    h = hk.Linear(300)(jnp.concatenate((h,a), axis=1))
+    h = jax.nn.relu(h)
+    return hk.Linear(1, hk.initializers.RandomUniform(-3e-3, 3e-3))(h)[..., 0]
 
 
 class PolicyNetwork(hk.Module):
@@ -20,6 +25,7 @@ class PolicyNetwork(hk.Module):
 
   def __call__(self, s: chex.Array) -> chex.Array:
     action_dims = prod(self.action_shape)
-    h = hk.nets.MLP([32,32,32, action_dims])(s)
-    h = jax.nn.tanh(h)
+    h = hk.nets.MLP([400, 300])(s)
+    h = hk.Linear(action_dims, hk.initializers.RandomUniform(-3e-3, 3e-3))(h)
+    h = jnp.tanh(h)
     return h
