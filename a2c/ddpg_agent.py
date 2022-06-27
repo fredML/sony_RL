@@ -136,15 +136,15 @@ class DDPGAgent(Agent):
         """
         # critic update
         #   Compute the critic loss and the gradients for ALL the parameters value, policy and targets
-        critic_grads, aux_critic = self._grad_critic(learner_state.params,  transition)
+        critic_grads, aux_critic = self._grad_critic(learner_state.params, transition)
 
         # Select the only params and gradients we are interested in for this part, the critics
         critic_params = {k:learner_state.params[k] for k in learner_state.params.keys() if  k.startswith("value/")}
         critic_grads_only_value = {k:critic_grads[k] for k in critic_grads.keys() if k.startswith("value/")}
 
         # Perform one optimization step
-        critic_udpates, new_opt_critic_state = self._critic_optimizer.update(critic_grads_only_value, learner_state.opt_critic_state, critic_params)
-        new_critic_params = optax.apply_updates(critic_params, critic_udpates)
+        critic_updates, new_opt_critic_state = self._critic_optimizer.update(critic_grads_only_value, learner_state.opt_critic_state, critic_params)
+        new_critic_params = optax.apply_updates(critic_params, critic_updates)
 
         # Update the critic
         learner_state.params.update(new_critic_params)

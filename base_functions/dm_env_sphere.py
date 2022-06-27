@@ -57,8 +57,6 @@ class SphereEnv(dm_env.Environment):
 
     def step(self, action) -> dm_env.TimeStep:
         theta, phi = action
-        theta = np.pi/4*theta
-        phi = np.pi*phi
         self.num_steps += 1
         self.current_theta += theta
         if self.current_theta > np.pi/2:
@@ -124,4 +122,4 @@ class SphereEnv(dm_env.Environment):
         return specs.BoundedArray(shape=(9,), minimum=-1., maximum=1., dtype=np.float32)
 
     def action_spec(self) -> specs.BoundedArray:
-        return specs.BoundedArray(shape=(1,2), minimum=-np.pi*np.array([1/4, 1]), maximum=np.pi*np.array([1/4, 1]), dtype=np.float32)
+        return specs.BoundedArray(shape=(1,2), minimum=-np.array([1, 1]), maximum=np.array([1, 1]), dtype=np.float32)
