@@ -3,7 +3,6 @@ from functools import partial
 
 import jax
 import numpy as np
-from gym.spaces import Box
 from haiku import PRNGSequence
 
 from replay_buffer import ReplayBuffer, PrioritizedReplayBuffer, RolloutBuffer
@@ -37,7 +36,7 @@ class BaseAlgorithm(ABC):
         self.action_space = action_space
         self.gamma = gamma
         self.max_grad_norm = max_grad_norm
-        self.discrete_action = False if type(action_space) == Box else True
+        self.discrete_action = False 
 
     def get_mask(self, env, done):
         return done if self.episode_step != env._max_episode_steps or self.discrete_action else False
@@ -65,13 +64,13 @@ class BaseAlgorithm(ABC):
     def update(self, writer):
         pass
 
-    ''' @abstractmethod
+    @abstractmethod
     def save_params(self, save_dir):
         pass
 
     @abstractmethod
     def load_params(self, save_dir):
-        pass'''
+        pass
 
     def __str__(self):
         return self.name

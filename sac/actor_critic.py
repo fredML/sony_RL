@@ -9,6 +9,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from base_algoirithm import OffPolicyAlgorithm, OnPolicyAlgorithm
+from saving import save_params, load_params
 
 
 class ActorCriticMixIn:
@@ -42,13 +43,13 @@ class ActorCriticMixIn:
     def _explore(self, params_actor, state, key):
         pass
 
-    '''def save_params(self, save_dir):
+    def save_params(self, save_dir):
         save_params(self.params_critic, os.path.join(save_dir, "params_critic.npz"))
         save_params(self.params_actor, os.path.join(save_dir, "params_actor.npz"))
 
     def load_params(self, save_dir):
         self.params_critic = load_params(os.path.join(save_dir, "params_critic.npz"))
-        self.params_actor = load_params(os.path.join(save_dir, "params_actor.npz"))'''
+        self.params_actor = load_params(os.path.join(save_dir, "params_actor.npz"))
 
 
 class OnPolicyActorCritic(ActorCriticMixIn, OnPolicyAlgorithm):
@@ -136,15 +137,6 @@ class OffPolicyActorCritic(ActorCriticMixIn, OffPolicyAlgorithm):
             tau=tau,
         )
         self.num_critics = num_critics
-        # Define fake input for critic.
-        '''if not hasattr(self, "fake_args_critic"):
-            if self.discrete_action:
-                self.fake_args_critic = (fake_state(state_space),)
-            else:
-                self.fake_args_critic = (fake_state(state_space), fake_action(action_space))
-        # Define fake input for actor.
-        if not hasattr(self, "fake_args_actor"):
-            self.fake_args_actor = (fake_state(state_space),)'''
 
     def explore(self, state):
         action = self._explore(self.params_actor, state[None, ...], next(self.rng))
