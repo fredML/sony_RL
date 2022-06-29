@@ -12,6 +12,12 @@ from skimage.morphology import binary_dilation
 import cv2
 import json
 
+platform = cl.get_platforms()
+devices = platform[0].get_devices(cl.device_type.GPU)
+print(devices)
+
+os.environ['PYOPENCL_CTX'] = '0'
+
 ctx = cl.create_some_context()
 queue = cl.CommandQueue(ctx)
 mf = cl.mem_flags
