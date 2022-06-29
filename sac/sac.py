@@ -13,6 +13,8 @@ from critic import ContinuousQFunction
 from optim import optimize
 from distribution import reparameterize_gaussian_and_tanh
 
+print(jax.devices())
+
 
 class SAC(OffPolicyActorCritic):
     name = "SAC"
@@ -36,7 +38,7 @@ class SAC(OffPolicyActorCritic):
         fn_actor=None,
         fn_critic=None,
         lr_actor=3e-4,
-        lr_critic=3e-4,
+        lr_critic=1e-4,
         lr_alpha=3e-4,
         units_actor=(256, 256),
         units_critic=(256, 256),
@@ -137,7 +139,7 @@ class SAC(OffPolicyActorCritic):
         state, action, reward, done, next_state = batch
 
         # Update critic.
-        self.opt_state_critic, self.params_critic, loss_critic, abs_td = optimize(
+        self.opt_state_critic, self.params_critic, loss_critic, (abs_td, target) = optimize(
             self._loss_critic,
             self.opt_critic,
             self.opt_state_critic,
@@ -160,7 +162,7 @@ class SAC(OffPolicyActorCritic):
             self.buffer.update_priority(abs_td)
 
         # Update actor.
-        self.opt_state_actor, self.params_actor, loss_actor, mean_log_pi = optimize(
+        self.opt_state_actor, self.params_actor, loss_actor, (mean_log_pi, mean_q) = optimize(
             self._loss_actor,
             self.opt_actor,
             self.opt_state_actor,
@@ -171,7 +173,6 @@ class SAC(OffPolicyActorCritic):
             state=state,
             **self.kwargs_actor,
         )
-
         # Update alpha.
         self.opt_state_alpha, self.log_alpha, loss_alpha, _ = optimize(
             self._loss_alpha,
@@ -185,8 +186,11 @@ class SAC(OffPolicyActorCritic):
         # Update target network.
         self.params_critic_target = self._update_target(self.params_critic_target, self.params_critic)
 
-        if writer and self.learning_step % 10 == 0:
-            writer.add_scalar("reward", reward.mean(), self.learning_step)
+        if writer and self.learning_step % 100 == 0:
+            writer.add_scalar("episode/target_q", target.mean(), self.learning_step)
+            writer.add_scalar("episode/mean_q", mean_q, self.learning_step)
+            writer.add_scalar("episode/done", done.mean(), self.learning_step)
+            writer.add_scalar("episode/reward", reward.mean(), self.learning_step)
             writer.add_scalar("loss/critic", loss_critic, self.learning_step)
             writer.add_scalar("loss/actor", loss_actor, self.learning_step)
             writer.add_scalar("loss/alpha", loss_alpha, self.learning_step)
@@ -245,7 +249,8 @@ class SAC(OffPolicyActorCritic):
         next_action, next_log_pi = self._sample_action(params_actor, next_state, *args, **kwargs)
         target = self._calculate_target(params_critic_target, log_alpha, reward, done, next_state, next_action, next_log_pi)
         q_list = self._calculate_value_list(params_critic, state, action)
-        return self._calculate_loss_critic_and_abs_td(q_list, target, weight)
+        loss_critic, abs_td = self._calculate_loss_critic_and_abs_td(q_list, target, weight)
+        return loss_critic, (abs_td, target)
 
     @partial(jax.jit, static_argnums=0)
     def _loss_actor(
@@ -260,7 +265,7 @@ class SAC(OffPolicyActorCritic):
         action, log_pi = self._sample_action(params_actor, state, *args, **kwargs)
         mean_q = self._calculate_value(params_critic, state, action).mean()
         mean_log_pi = self._calculate_log_pi(action, log_pi).mean()
-        return jax.lax.stop_gradient(jnp.exp(log_alpha)) * mean_log_pi - mean_q, jax.lax.stop_gradient(mean_log_pi)
+        return jax.lax.stop_gradient(jnp.exp(log_alpha)) * mean_log_pi - mean_q, (jax.lax.stop_gradient(mean_log_pi), mean_q)
 
     @partial(jax.jit, static_argnums=0)
     def _loss_alpha(

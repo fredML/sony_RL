@@ -18,7 +18,6 @@ class Trainer:
         env_test,
         algo,
         log_dir,
-        seed=0,
         action_repeat=1,
         num_agent_steps=10 ** 6,
         eval_interval=10 ** 4,
@@ -71,9 +70,8 @@ class Trainer:
     def evaluate(self, step):
         total_return = 0.0
         for _ in range(self.num_eval_episodes):
-            state = self.env_test.reset()
-            done = False
-            while not done:
+            _,_,_, state = self.env_test.reset()
+            for k in range (20):
                 action = self.algo.select_action(state)
                 #state, reward, done, _ = self.env_test.step(action)
                 done, reward, _, state = self.env_test.step(action)

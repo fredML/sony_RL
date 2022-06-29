@@ -59,6 +59,7 @@ class ContinuousQFunction(hk.Module):
                 self.hidden_units,
                 hidden_activation=nn.relu,
                 hidden_scale=np.sqrt(2),
+                output_scale=0.1,
                 d2rl=self.d2rl,
             )(x)
 
