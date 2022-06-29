@@ -87,12 +87,12 @@ class SphereEnv(dm_env.Environment):
         else:
             self.reward = -self.k_t
 
-        observation = self.last_k_pos
+        observation = self.last_k_pos.astype('float32')
 
         if self.total_reward > self.max_reward:
-            return dm_env.termination(reward=self.reward, observation=observation)
+            return dm_env.termination(reward=self.reward*1., observation=observation)
 
-        return dm_env.transition(reward=self.reward, observation=observation)
+        return dm_env.transition(reward=self.reward*1., observation=observation)
 
     def step_angle(self, theta, phi) -> dm_env.TimeStep:
 
@@ -111,15 +111,15 @@ class SphereEnv(dm_env.Environment):
         self.last_k_pos = np.concatenate((self.last_k_pos[3:], pos))
 
         self.total_reward += self.reward
-        observation = self.last_k_pos
+        observation = self.last_k_pos.astype('float32')
 
         if self.total_reward > self.max_reward:
-            return dm_env.termination(reward=self.reward, observation=observation)
+            return dm_env.termination(reward=self.reward*1., observation=observation)
 
-        return dm_env.transition(reward=self.reward, observation=observation)
+        return dm_env.transition(reward=self.reward*1., observation=observation)
 
     def observation_spec(self) -> specs.BoundedArray:
         return specs.BoundedArray(shape=(9,), minimum=-1., maximum=1., dtype=np.float32)
 
     def action_spec(self) -> specs.BoundedArray:
-        return specs.BoundedArray(shape=(1,2), minimum=-np.array([1, 1]), maximum=np.array([1, 1]), dtype=np.float32)
+        return specs.BoundedArray(shape=(2,), minimum=-np.array([1, 1]), maximum=np.array([1, 1]), dtype=np.float32)

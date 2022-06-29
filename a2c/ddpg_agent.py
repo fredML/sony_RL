@@ -85,7 +85,7 @@ class DDPGAgent(Agent):
 
         return Transition(
             obs_tm1=observation[None],
-            action_tm1=action,
+            action_tm1=action[None],
             reward_t=jnp.zeros(1),
             discount_t=jnp.zeros(1),
             obs_t=observation[None],
