@@ -80,12 +80,6 @@ class OnPolicyActorCritic(ActorCriticMixIn, OnPolicyAlgorithm):
             buffer_size=buffer_size,
             batch_size=batch_size,
         )
-        # Define fake input for critic.
-        '''if not hasattr(self, "fake_args_critic"):
-            self.fake_args_critic = (fake_state(state_space),)
-        # Define fake input for actor.
-        if not hasattr(self, "fake_args_actor"):
-            self.fake_args_actor = (fake_state(state_space),)'''
 
     def is_update(self):
         return self.agent_step % self.buffer_size == 0

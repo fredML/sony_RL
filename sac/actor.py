@@ -28,6 +28,7 @@ class DeterministicPolicy(hk.Module):
             self.hidden_units,
             hidden_activation=nn.relu,
             output_activation=jnp.tanh,
+            output_scale=0.1,
             d2rl=self.d2rl,
         )(x)
 
