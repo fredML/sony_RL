@@ -53,8 +53,18 @@ class ContinuousQFunction(hk.Module):
         self.d2rl = d2rl
 
     def __call__(self, s, a):
-        def _fn(x):
-            return MLP(
+        def _fn(s, a):
+            if len(s.shape) == 4:
+                s = DQNBody()(s)
+                s = MLP(
+                    5,
+                    (32, 32),
+                    hidden_activation=nn.relu,
+                    hidden_scale=np.sqrt(2),
+                    output_scale=0.1,
+                    d2rl=self.d2rl,)(s)
+            x = jnp.concatenate([s, a], axis=1)
+            x = MLP(
                 1,
                 self.hidden_units,
                 hidden_activation=nn.relu,
@@ -63,9 +73,11 @@ class ContinuousQFunction(hk.Module):
                 d2rl=self.d2rl,
             )(x)
 
-        x = jnp.concatenate([s, a], axis=1)
+            return x
+
+        
         # Return list even if num_critics == 1 for simple implementation.
-        return [_fn(x) for _ in range(self.num_critics)]
+        return [_fn(s, a) for _ in range(self.num_critics)]
 
 
 class ContinuousQuantileFunction(hk.Module):

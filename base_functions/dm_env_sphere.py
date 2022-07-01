@@ -3,11 +3,12 @@ from space_carving import *
 import dm_env
 from acme import specs
 from utils import angle_to_position_continuous
+from skimage.transform import resize
 
 
 class SphereEnv(dm_env.Environment):
 
-    def __init__(self, objects_path, voxel_weights=None, rmax=0.9, k_d=0.1, k_t=0):
+    def __init__(self, objects_path, voxel_weights=None, rmax=0.9, k_d=0.1, k_t=0, img_shape=84):
 
         super(SphereEnv, self).__init__()
         self.objects_path = objects_path
@@ -18,6 +19,8 @@ class SphereEnv(dm_env.Environment):
         self.max_reward = rmax
         self.k_d = k_d #penalty based on distance between two camera positions
         self.k_t = k_t #penalty based on number of views
+
+        self.env_shape = (img_shape,img_shape,3)
 
     def reset(self, theta_init=-1, phi_init=-1) -> dm_env.TimeStep:
         self.num_steps = 0
@@ -52,6 +55,7 @@ class SphereEnv(dm_env.Environment):
             self.current_theta, self.current_phi)
         img = self.spc.get_image_continuous(self.current_theta, self.current_phi)
         img_gray = np.dot(img, [0.2989, 0.5870, 0.1140])
+        img_gray = resize(img_gray,self.env_shape[:2])
         self.last_k_pos = np.concatenate((pos, pos, pos))
         self.last_k_img = np.stack((img_gray,img_gray,img_gray),axis=-1)
         #observation = self.last_k_pos.astype('float32')
@@ -84,6 +88,7 @@ class SphereEnv(dm_env.Environment):
             self.current_theta, self.current_phi)
         img = self.spc.img
         img_gray = np.dot(img, [0.2989, 0.5870, 0.1140])
+        img_gray = resize(img_gray,self.env_shape[:2])
         self.penalty = np.linalg.norm(pos-self.last_k_pos[-3:])
         self.last_k_pos = np.concatenate((self.last_k_pos[3:], pos))
         self.last_k_img = np.concatenate((self.last_k_img[...,1:], img_gray[...,None]),axis=-1)
@@ -91,6 +96,7 @@ class SphereEnv(dm_env.Environment):
         self.total_reward += self.reward
         if self.reward > 0:
             self.reward -= self.k_d*self.penalty
+            self.reward = max(self.reward,0)
         else:
             self.reward = -self.k_t
 
@@ -118,6 +124,7 @@ class SphereEnv(dm_env.Environment):
             self.current_theta, self.current_phi)
         img = self.spc.img
         img_gray = np.dot(img, [0.2989, 0.5870, 0.1140])
+        img_gray = resize(img_gray,self.env_shape[:2])
         self.penalty = np.linalg.norm(pos-self.last_k_pos[-3:])
         self.last_k_pos = np.concatenate((self.last_k_pos[3:], pos))
         self.last_k_img = np.concatenate((self.last_k_img[...,1:], img_gray[...,None]),axis=-1)
@@ -137,7 +144,9 @@ class SphereEnv(dm_env.Environment):
         return dm_env.transition(reward=self.reward*1., observation=observation)
 
     def observation_spec(self) -> specs.BoundedArray:
-        return specs.BoundedArray(shape=(9,), minimum=-1., maximum=1., dtype=np.float32)
+        if len(self.env_shape) == 3:
+            return specs.BoundedArray(shape=self.env_shape, minimum=0, maximum=255, dtype=np.uint8)
+        return specs.BoundedArray(shape=(9), minimum=-1, maximum=1, dtype=np.float32)
 
     def action_spec(self) -> specs.BoundedArray:
-        return specs.BoundedArray(shape=(2,), minimum=-np.array([1, 1]), maximum=np.array([1, 1]), dtype=np.float32)
+        return specs.BoundedArray(shape=(2,), minimum=-1, maximum=1, dtype=np.float32)
