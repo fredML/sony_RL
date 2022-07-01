@@ -7,7 +7,7 @@ from utils import angle_to_position_continuous
 
 class SphereEnv(dm_env.Environment):
 
-    def __init__(self, objects_path, voxel_weights=None, rmax=0.3, k_d=0.1, k_t=0):
+    def __init__(self, objects_path, voxel_weights=None, rmax=0.9, k_d=0.1, k_t=0):
 
         super(SphereEnv, self).__init__()
         self.objects_path = objects_path
@@ -50,8 +50,12 @@ class SphereEnv(dm_env.Environment):
 
         pos = angle_to_position_continuous(
             self.current_theta, self.current_phi)
+        img = self.spc.get_image_continuous(self.current_theta, self.current_phi)
+        img_gray = np.dot(img, [0.2989, 0.5870, 0.1140])
         self.last_k_pos = np.concatenate((pos, pos, pos))
-        observation = self.last_k_pos
+        self.last_k_img = np.stack((img_gray,img_gray,img_gray),axis=-1)
+        #observation = self.last_k_pos.astype('float32')
+        observation = self.last_k_img
 
         return dm_env.restart(observation)
 
@@ -78,8 +82,11 @@ class SphereEnv(dm_env.Environment):
 
         pos = angle_to_position_continuous(
             self.current_theta, self.current_phi)
+        img = self.spc.img
+        img_gray = np.dot(img, [0.2989, 0.5870, 0.1140])
         self.penalty = np.linalg.norm(pos-self.last_k_pos[-3:])
         self.last_k_pos = np.concatenate((self.last_k_pos[3:], pos))
+        self.last_k_img = np.concatenate((self.last_k_img[...,1:], img_gray[...,None]),axis=-1)
 
         self.total_reward += self.reward
         if self.reward > 0:
@@ -87,7 +94,8 @@ class SphereEnv(dm_env.Environment):
         else:
             self.reward = -self.k_t
 
-        observation = self.last_k_pos.astype('float32')
+        #observation = self.last_k_pos.astype('float32')
+        observation = self.last_k_img
 
         if self.total_reward > self.max_reward:
             return dm_env.termination(reward=self.reward*1., observation=observation)
@@ -108,10 +116,20 @@ class SphereEnv(dm_env.Environment):
 
         pos = angle_to_position_continuous(
             self.current_theta, self.current_phi)
+        img = self.spc.img
+        img_gray = np.dot(img, [0.2989, 0.5870, 0.1140])
+        self.penalty = np.linalg.norm(pos-self.last_k_pos[-3:])
         self.last_k_pos = np.concatenate((self.last_k_pos[3:], pos))
+        self.last_k_img = np.concatenate((self.last_k_img[...,1:], img_gray[...,None]),axis=-1)
 
         self.total_reward += self.reward
-        observation = self.last_k_pos.astype('float32')
+        if self.reward > 0:
+            self.reward -= self.k_d*self.penalty
+        else:
+            self.reward = -self.k_t
+
+        #observation = self.last_k_pos.astype('float32')
+        observation = self.last_k_img
 
         if self.total_reward > self.max_reward:
             return dm_env.termination(reward=self.reward*1., observation=observation)

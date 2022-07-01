@@ -56,6 +56,8 @@ class StateDependentGaussianPolicy(hk.Module):
         self.d2rl = d2rl
 
     def __call__(self, x):
+        if len(x.shape)==4:
+            x = DQNBody()(x)
         x = MLP(
             2 * self.action_space.shape[0],
             self.hidden_units,

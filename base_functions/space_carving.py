@@ -16,7 +16,7 @@ import rlviewer
 os.chdir(path)
 
 class space_carving_rotation_2d():
-    def __init__(self, model_path, total_phi_positions=None, voxel_weights=None, continuous=True):
+    def __init__(self, model_path, total_phi_positions=None, voxel_weights=None, n_holes=3, continuous=True):
 
         self.camera_model = json.load(
                 open(os.path.join(model_path, 'camera_model.json')))
@@ -31,6 +31,7 @@ class space_carving_rotation_2d():
         self.n_dilation = params["sc"]["n_dilation"]
         self.voxel_size = params['sc']['voxel_size']
         self.radius = params['traj']['R']
+        self.small_radius = 0.5
 
         self.origin, self.sc, self.last_volume = set_sc(self.bbox, self.voxel_size)
         self.vol_shape = self.sc.values().shape
@@ -38,7 +39,31 @@ class space_carving_rotation_2d():
         if voxel_weights is not None:
             self.voxel_weights = voxel_weights
         else:
-            self.voxel_weights = np.ones(self.vol_shape)
+            from scipy.spatial.transform import Rotation as Rot
+            self.voxel_weights = np.zeros(self.vol_shape)
+            origin_pos = np.array([5,0,0])
+            neigh_xyz = origin_pos + np.array([[-h,r*np.cos(theta),r*np.sin(theta)] for theta in
+            np.linspace(0,2*np.pi,10) for r in np.linspace(0,self.small_radius,5) for h in np.linspace(1,9,10)])
+            self.neigh_ijk = []
+            self.neigh_ijk.append((neigh_xyz - self.origin)/self.voxel_size)
+            self.pos = [origin_pos]
+            for _ in range (n_holes-1):
+                new_pos = origin_pos
+                while np.min(np.linalg.norm(new_pos-np.array(self.pos),axis=1)) < 2: #make sure the new hole is far from the previous ones
+                    a, b = np.random.uniform(low=[-np.pi/2,-np.pi],high=[np.pi/2,np.pi],size=2)
+                    r1 = Rot.from_rotvec([0,0,b])
+                    r2 = Rot.from_rotvec([a,0,0])
+                    r = r2*r1
+                    new_pos = r.apply(origin_pos)
+                new_neigh_xyz = r.apply(neigh_xyz)
+                self.neigh_ijk.append((new_neigh_xyz - self.origin)/self.voxel_size)
+                self.pos.append(new_pos)
+                
+            self.neigh_ijk = np.concatenate(self.neigh_ijk)
+            self.neigh_ijk = self.neigh_ijk.astype('int32')
+
+            for i in self.neigh_ijk:
+                self.voxel_weights[i[0],i[1],i[2]] = 1     
 
         self.continuous = continuous
 
@@ -67,39 +92,7 @@ class space_carving_rotation_2d():
             self.gt = np.load(self.gt_files[0])
             self.gt_solid_mask = np.where(self.gt == 1, True, False)
             self.gt_n_solid_voxels = np.sum(self.gt_solid_mask*self.voxel_weights)
-
-        ## reweighting of the voxels
-
-        '''R = 0.3
-        H = 8
-
-        neigh_ijk = []
-        self.index = np.ones(self.vol_shape)
-        self.voxel_weights = np.zeros(self.vol_shape)
-
-        if pos is not None:
-
-            neigh_xyz = pos + np.array([[-h,r*np.cos(theta),r*np.sin(theta)] for theta in
-                np.linspace(0,2*np.pi,10) for r in np.linspace(0,R,5) for h in np.linspace(0,H,10)])
-            neigh_ijk.append((neigh_xyz - self.origin)/self.voxel_size)
-            
-            r = Rot.from_rotvec(np.pi/4 * np.array([1, 0, 2]))
-            neigh_xyz_1 = r.apply(neigh_xyz)
-            neigh_ijk.append((neigh_xyz_1 - self.origin)/self.voxel_size)
-
-            neigh_xyz_2 = deepcopy(neigh_xyz_1)
-            neigh_xyz_2[:,1] = -neigh_xyz_2[:,1]
-            neigh_ijk.append((neigh_xyz_2 - self.origin)/self.voxel_size)
-            neigh_ijk = np.concatenate(neigh_ijk)
-            neigh_ijk = neigh_ijk.astype('int32')
-            self.neigh_ijk = neigh_ijk
-
-            for i in neigh_ijk:
-                self.index[i[0],i[1],i[2]] = 0
-                self.voxel_weights[i[0],i[1],i[2]] = 1
-
-        self.voxel_weights = distance_transform_edt(self.index)
-        self.voxel_weights = 1-self.voxel_weights/np.max(self.voxel_weights)'''
+        
 
     def reset(self):
         del(self.sc)
@@ -128,6 +121,10 @@ class space_carving_rotation_2d():
 
         return cp
 
+    def get_image_continuous(self, theta, phi):
+        img = rlviewer.grab(self.radius, theta-np.pi/2, phi) 
+        return img
+
     def carve(self, theta, phi):
         '''space carve in position theta(rows),phi(cols)
         theta and phi are steps of the scanner, not angles'''
@@ -142,7 +139,7 @@ class space_carving_rotation_2d():
 
     def continuous_carve(self, theta, phi):
         assert self.continuous, "continuous settings only"
-        img = rlviewer.grab(self.radius, theta-np.pi/2, phi) 
+        img = self.get_image_continuous(theta, phi)
         self.img = img
         mask = get_mask_black(img)
         self.mask = mask
