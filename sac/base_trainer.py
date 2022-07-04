@@ -24,6 +24,7 @@ class Trainer:
         eval_interval=10 ** 4,
         num_eval_episodes=10,
         save_params=False,
+        save_interval=10**4
     ):
         assert num_agent_steps % action_repeat == 0
         assert eval_interval % action_repeat == 0
@@ -47,6 +48,7 @@ class Trainer:
         self.eval_interval = eval_interval
         self.num_eval_episodes = num_eval_episodes
         self.save_params = save_params
+        self.save_interval = save_interval
 
     def train(self):
         # Time to start training.
@@ -62,6 +64,8 @@ class Trainer:
 
             if step % self.eval_interval == 0:
                 self.evaluate(step)
+            
+            if step % self.save_interval == 0:
                 if self.save_params:
                     self.algo.save_params(os.path.join(self.param_dir, f"step{step}"))
 
@@ -73,7 +77,7 @@ class Trainer:
         num_steps = []
         for _ in range(self.num_eval_episodes):
             _,_,_, state = self.env_test.reset()
-            for k in range (20):
+            for k in range (10):
                 action = self.algo.select_action(state)
                 #state, reward, done, _ = self.env_test.step(action)
                 done, reward, _, state = self.env_test.step(action)
