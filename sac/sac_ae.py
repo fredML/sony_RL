@@ -44,14 +44,14 @@ class SAC_AE(SAC):
         lr_critic=1e-4,
         lr_ae=1e-3,
         lr_alpha=1e-4,
-        units_actor=(1024, 1024),
-        units_critic=(1024, 1024),
+        units_actor=(32, 32),
+        units_critic=(32, 32),
         log_std_min=-10.0,
         log_std_max=2.0,
         d2rl=False,
         init_alpha=0.1,
         adam_b1_alpha=0.5,
-        feature_dim=50,
+        feature_dim=5,
         lambda_latent=1e-6,
         lambda_weight=1e-7,
         update_interval_actor=2,
@@ -59,14 +59,14 @@ class SAC_AE(SAC):
         update_interval_target=2,
     ):
         assert len(state_space.shape) == 3 and state_space.shape[:2] == (84, 84)
-        assert (state_space.high == 255).all()
+        assert (state_space.maximum == 255).all()
         if d2rl:
             self.name += "-D2RL"
 
         if fn_critic is None:
 
             def fn_critic(x, a):
-                # Define without linear layer.
+                # Define without linear layer 
                 return ContinuousQFunction(
                     num_critics=num_critics,
                     hidden_units=units_critic,
@@ -76,8 +76,7 @@ class SAC_AE(SAC):
         if fn_actor is None:
 
             def fn_actor(x):
-                # Define with linear layer.
-                x = SACLinear(feature_dim=feature_dim)(x)
+                # Define without linear layer
                 return StateDependentGaussianPolicy(
                     action_space=action_space,
                     hidden_units=units_actor,
@@ -115,7 +114,7 @@ class SAC_AE(SAC):
         )
         # Encoder.
         self.encoder = hk.without_apply_rng(hk.transform(lambda s: SACEncoder(num_filters=32, num_layers=4)(s)))
-        self.params_encoder = self.params_encoder_target = self.encoder.init(next(self.rng), np.random.uniform(0,255,state_space.shape[None]))
+        self.params_encoder = self.params_encoder_target = self.encoder.init(next(self.rng), jnp.empty(state_space.shape)[None])
 
         # Linear layer for critic and decoder.
         self.linear = hk.without_apply_rng(hk.transform(lambda x: SACLinear(feature_dim=feature_dim)(x)))
@@ -140,12 +139,12 @@ class SAC_AE(SAC):
         self.update_interval_target = update_interval_target
 
     def select_action(self, state):
-        last_conv = self._preprocess(self.params_encoder, state[None, ...])
+        last_conv = self._preprocess(self.params_encoder, self.params_linear, state[None, ...])
         action = self._select_action(self.params_actor, last_conv)
         return np.array(action[0])
 
     def explore(self, state):
-        last_conv = self._preprocess(self.params_encoder, state[None, ...])
+        last_conv = self._preprocess(self.params_encoder, self.params_linear, state[None, ...])
         action = self._explore(self.params_actor, last_conv, next(self.rng))
         return np.array(action[0])
 
@@ -153,9 +152,11 @@ class SAC_AE(SAC):
     def _preprocess(
         self,
         params_encoder: hk.Params,
+        params_linear: hk.Params,
         state: np.ndarray,
     ) -> jnp.ndarray:
-        return self.encoder.apply(params_encoder, state)
+        conv = self.encoder.apply(params_encoder, state)
+        return self.linear.apply(params_linear, conv)
 
     def update(self, writer=None):
         self.learning_step += 1
@@ -250,8 +251,9 @@ class SAC_AE(SAC):
         last_conv: np.ndarray,
         action: np.ndarray,
     ) -> List[jnp.ndarray]:
-        feature = self.linear.apply(params_critic["linear"], last_conv)
-        return self.critic.apply(params_critic["critic"], feature, action)
+        #feature = self.linear.apply(params_critic["linear"], last_conv)
+        #return self.critic.apply(params_critic["critic"], feature, action)
+        return self.critic.apply(params_critic["critic"], last_conv, action)
 
     @partial(jax.jit, static_argnums=0)
     def _loss_critic(
@@ -271,16 +273,18 @@ class SAC_AE(SAC):
     ) -> Tuple[jnp.ndarray, jnp.ndarray]:
         last_conv = self.encoder.apply(params_critic["encoder"], state)
         next_last_conv = jax.lax.stop_gradient(self.encoder.apply(params_critic["encoder"], next_state))
+        feature = self.linear.apply(params_critic["linear"], last_conv)
+        next_feature = jax.lax.stop_gradient(self.linear.apply(params_critic["linear"], next_last_conv))
         return super(SAC_AE, self)._loss_critic(
             params_critic=params_critic,
             params_critic_target=params_critic_target,
             params_actor=params_actor,
             log_alpha=log_alpha,
-            state=last_conv,
+            state=feature,
             action=action,
             reward=reward,
             done=done,
-            next_state=next_last_conv,
+            next_state=next_feature,
             weight=weight,
             *args,
             **kwargs,
@@ -296,12 +300,13 @@ class SAC_AE(SAC):
         *args,
         **kwargs,
     ) -> Tuple[jnp.ndarray, jnp.ndarray]:
-        last_conv = jax.lax.stop_gradient(self.encoder.apply(params_critic["encoder"], state))
+        last_conv = jax.lax.stop_gradient(self.encoder.apply(params_critic["encoder"], state)) #actor update do not flow into AE
+        feature = jax.lax.stop_gradient(self.linear.apply(self.params_linear, last_conv))
         return super(SAC_AE, self)._loss_actor(
             params_actor=params_actor,
             params_critic=params_critic,
             log_alpha=log_alpha,
-            state=last_conv,
+            state=feature,
             *args,
             **kwargs,
         )

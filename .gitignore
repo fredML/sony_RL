@@ -4,6 +4,7 @@
 *.npz
 *.json
 *.ipynb
+*.py
 *.py#
 *.ipynb#
 *.obj

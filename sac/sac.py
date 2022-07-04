@@ -98,14 +98,16 @@ class SAC(OffPolicyActorCritic):
 
         # Critic.
         self.critic = hk.without_apply_rng(hk.transform(fn_critic))
-        self.params_critic = self.params_critic_target = self.critic.init(next(self.rng), np.random.uniform(0,255,state_space.shape)[None],
-                                                                                          np.random.uniform(-1,1,action_space.shape)[None])
-                                                                                          
+        #self.params_critic = self.params_critic_target = self.critic.init(next(self.rng), np.random.uniform(0,255,state_space.shape)[None],
+        #                                                                                  np.random.uniform(-1,1,action_space.shape)[None])
+        self.params_critic = self.params_critic_target = self.critic.init(next(self.rng), jnp.empty((1,5)),
+                                                                                          jnp.empty(action_space.shape)[None])                                                                                  
         opt_init, self.opt_critic = optax.adam(lr_critic)
         self.opt_state_critic = opt_init(self.params_critic)
         # Actor.
         self.actor = hk.without_apply_rng(hk.transform(fn_actor))
-        self.params_actor = self.actor.init(next(self.rng), np.random.uniform(0,1,state_space.shape)[None])
+        #self.params_actor = self.actor.init(next(self.rng), np.random.uniform(0,1,state_space.shape)[None])
+        self.params_actor = self.actor.init(next(self.rng), jnp.empty((1,5)))
         opt_init, self.opt_actor = optax.adam(lr_actor)
         self.opt_state_actor = opt_init(self.params_actor)
         # Entropy coefficient.

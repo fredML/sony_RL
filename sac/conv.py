@@ -45,9 +45,8 @@ class SACEncoder(hk.Module):
     def __call__(self, x):
         # Floatify the image.
         x = x.astype(jnp.float32) / 255.0
-
         # Apply CNN.
-        w_init = DeltaOrthogonal(scale=np.sqrt(2 / (1 + self.negative_slope ** 2)))
+        w_init = hk.initializers.Orthogonal(scale=np.sqrt(2 / (1 + self.negative_slope ** 2)))
         x = hk.Conv2D(self.num_filters, kernel_shape=4, stride=2, padding="VALID", w_init=w_init)(x)
         x = nn.leaky_relu(x, self.negative_slope)
         for _ in range(self.num_layers - 1):
@@ -78,13 +77,13 @@ class SACDecoder(hk.Module):
         x = nn.leaky_relu(x, self.negative_slope).reshape(-1, self.map_size, self.map_size, self.num_filters)
 
         # Apply Transposed CNN.
-        w_init = DeltaOrthogonal(scale=np.sqrt(2 / (1 + self.negative_slope ** 2)))
+        w_init = hk.initializers.Orthogonal(scale=np.sqrt(2 / (1 + self.negative_slope ** 2)))
         for _ in range(self.num_layers - 1):
             x = hk.Conv2DTranspose(self.num_filters, kernel_shape=3, stride=1, padding="VALID", w_init=w_init)(x)
             x = nn.leaky_relu(x, self.negative_slope)
 
         # Apply output layer.
-        w_init = DeltaOrthogonal(scale=1.0)
+        w_init = hk.initializers.Orthogonal(scale=1.0)
         x = hk.Conv2DTranspose(self.state_space.shape[2], kernel_shape=4, stride=2, padding="VALID", w_init=w_init)(x)
         return x
 
