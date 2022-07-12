@@ -8,7 +8,7 @@ from skimage.transform import resize
 
 class SphereEnv(dm_env.Environment):
 
-    def __init__(self, objects_path, voxel_weights=None, rmax=0.9, k_d=0, k_t=0, img_shape=84):
+    def __init__(self, objects_path, env_shape, img_shape, voxel_weights=None, rmax=0.9, k_d=0, k_t=0, apply_ae=None, params_ae=None):
 
         super(SphereEnv, self).__init__()
         self.objects_path = objects_path
@@ -20,7 +20,13 @@ class SphereEnv(dm_env.Environment):
         self.k_d = k_d #penalty based on distance between two camera positions
         self.k_t = k_t #penalty based on number of views
 
-        self.env_shape = (img_shape,img_shape,3)
+        self.opt_pos = angle_to_position_continuous(np.pi*np.array([1/2,1/4,1/4]), np.pi*np.array([0,1/2,-1/2]))
+
+        self.env_shape = env_shape
+        self.img_shape = img_shape # for reshaping images
+        self.apply_ae = apply_ae
+        if params_ae is not None:
+            self.params_ae, self.bn_ae_state = params_ae
 
     def reset(self, theta_init=-1, phi_init=-1) -> dm_env.TimeStep:
         self.num_steps = 0
@@ -53,15 +59,32 @@ class SphereEnv(dm_env.Environment):
 
         pos = angle_to_position_continuous(
             self.current_theta, self.current_phi)
+        self.pos = pos
         img = self.spc.get_image_continuous(self.current_theta, self.current_phi)
-        img_gray = np.dot(img, [0.2989, 0.5870, 0.1140])
-        img_gray = resize(img_gray,self.env_shape[:2])
+        pil_img = Image.fromarray(img).resize((self.img_shape, self.img_shape))
+        self.img = np.array(pil_img)/255
+        img_gray = np.array(pil_img.convert('L'))/255
         self.last_k_pos = np.concatenate((pos, pos, pos))
         self.last_k_img = np.stack((img_gray,img_gray,img_gray), axis=-1)
-        #observation = self.last_k_pos.astype('float32')
-        observation = self.last_k_img.astype('float32')
 
-        return dm_env.restart(observation)
+        self.opt_dist = np.linalg.norm(self.pos - self.opt_pos, axis=1)
+
+        if self.apply_ae is not None:
+            if self.bn_ae_state is not None:
+                reconst_latent, _ = self.apply_ae(self.params_ae, self.bn_ae_state, self.img[None], False)
+                reconst, latent = reconst_latent
+                
+            else:
+                _, latent = self.apply_ae(self.params_ae, self.img[None])
+
+            latent = latent[0]   
+            self.observation = np.concatenate((latent, latent, latent))
+        
+        else:
+            self.observation = self.last_k_img
+            #self.observation = self.last_k_pos.astype('float32')
+
+        return dm_env.restart(self.observation)
 
     def step(self, action) -> dm_env.TimeStep:
         theta, phi = action
@@ -87,11 +110,14 @@ class SphereEnv(dm_env.Environment):
         pos = angle_to_position_continuous(
             self.current_theta, self.current_phi)
         img = self.spc.img
-        img_gray = np.dot(img, [0.2989, 0.5870, 0.1140])
-        img_gray = resize(img_gray,self.env_shape[:2])
+        pil_img = Image.fromarray(img).resize((self.img_shape, self.img_shape))
+        self.img = np.array(pil_img)/255
+        img_gray = np.array(pil_img.convert('L'))/255
         self.penalty = np.linalg.norm(pos-self.last_k_pos[-3:])
         self.last_k_pos = np.concatenate((self.last_k_pos[3:], pos))
         self.last_k_img = np.concatenate((self.last_k_img[...,1:], img_gray[...,None]), axis=-1)
+
+        self.opt_dist = np.linalg.norm(self.pos - self.opt_pos, axis=1)
 
         self.total_reward += self.reward
         if self.reward > 0:
@@ -100,13 +126,25 @@ class SphereEnv(dm_env.Environment):
         else:
             self.reward = -self.k_t
 
-        #observation = self.last_k_pos.astype('float32')
-        observation = self.last_k_img.astype('float32')
+        if self.apply_ae is not None:
+            if self.bn_ae_state is not None:
+                reconst_latent, _ = self.apply_ae(self.params_ae, self.bn_ae_state, self.img[None], False)
+                reconst, latent = reconst_latent
+                
+            else:
+                _, latent = self.apply_ae(self.params_ae, self.img[None])
+
+            latent = latent[0]               
+            self.observation = np.concatenate((self.observation[3:], latent))
+        
+        else:
+            self.observation = self.last_k_img
+            #self.observation = self.last_k_pos.astype('float32')
 
         if self.total_reward > self.max_reward:
-            return dm_env.termination(reward=self.reward*1., observation=observation)
+            return dm_env.termination(reward=self.reward*1., observation=self.observation)
 
-        return dm_env.transition(reward=self.reward*1., observation=observation)
+        return dm_env.transition(reward=self.reward*1., observation=self.observation)
 
     def step_angle(self, theta, phi) -> dm_env.TimeStep:
 
@@ -123,11 +161,14 @@ class SphereEnv(dm_env.Environment):
         pos = angle_to_position_continuous(
             self.current_theta, self.current_phi)
         img = self.spc.img
-        img_gray = np.dot(img, [0.2989, 0.5870, 0.1140])
-        img_gray = resize(img_gray,self.env_shape[:2])
+        pil_img = Image.fromarray(img).resize((self.img_shape, self.img_shape))
+        self.img = np.array(pil_img)/255
+        img_gray = np.array(pil_img.convert('L'))/255
         self.penalty = np.linalg.norm(pos-self.last_k_pos[-3:])
         self.last_k_pos = np.concatenate((self.last_k_pos[3:], pos))
         self.last_k_img = np.concatenate((self.last_k_img[...,1:], img_gray[...,None]), axis=-1)
+
+        self.opt_dist = np.linalg.norm(self.pos - self.opt_pos, axis=1)
 
         self.total_reward += self.reward
         if self.reward > 0:
@@ -135,18 +176,31 @@ class SphereEnv(dm_env.Environment):
         else:
             self.reward = -self.k_t
 
-        #observation = self.last_k_pos.astype('float32')
-        observation = self.last_k_img.astype('float32')
+        if self.apply_ae is not None:
+            if self.bn_ae_state is not None:
+                reconst_latent, _ = self.apply_ae(self.params_ae, self.bn_ae_state, self.img[None], False)
+                reconst, latent = reconst_latent
+                
+            else:
+                _, latent = self.apply_ae(self.params_ae, self.img[None])
+
+            latent = latent[0]    
+            
+            self.observation = np.concatenate((self.observation[3:], latent))
+        
+        else:
+            self.observation = self.last_k_img
+            #self.observation = self.last_k_pos.astype('float32')
 
         if self.total_reward > self.max_reward:
-            return dm_env.termination(reward=self.reward*1., observation=observation)
+            return dm_env.termination(reward=self.reward*1., observation=self.observation)
 
-        return dm_env.transition(reward=self.reward*1., observation=observation)
+        return dm_env.transition(reward=self.reward*1., observation=self.observation)
 
     def observation_spec(self) -> specs.BoundedArray:
-        if len(self.env_shape) == 3:
+        if (len(self.env_shape) == 3) & (self.apply_ae is None):
             return specs.BoundedArray(shape=self.env_shape, minimum=0, maximum=255, dtype=np.uint8)
-        return specs.BoundedArray(shape=(9), minimum=-1, maximum=1, dtype=np.float32)
+        return specs.BoundedArray(shape=self.env_shape, minimum=-1, maximum=1, dtype=np.float32)
 
     def action_spec(self) -> specs.BoundedArray:
         return specs.BoundedArray(shape=(2,), minimum=-1, maximum=1, dtype=np.float32)

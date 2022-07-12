@@ -26,8 +26,11 @@ def get_mask(img):
     return 255*mask
 
 def get_mask_black(img):
-    mask = np.all((img == [0,0,0]), axis=-1)
-    mask = 1 - mask
+    a = img[...,0]==0
+    b = img[...,1]==0
+    c = img[...,2]==0
+
+    mask = 1 - (a&b&c)*1
     return 255*mask
 
 def get_frame(img):
@@ -72,9 +75,7 @@ def make_extrinsics(radius, pos):
     R[0] = np.cross(up,pos)
     R[1] = np.cross(R[2],R[0])
 
-    T = np.array([0,0, radius])
-
-    return {'R':R.tolist(), 'T':T.tolist()}
+    return {'R':R.tolist(), 'T':[0,0, radius]}
 
 def angle_to_position(theta, phi):
     return np.array([np.cos(2*phi*np.pi/180)*np.sin((theta+1)*np.pi/8),
