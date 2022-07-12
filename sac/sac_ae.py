@@ -36,14 +36,14 @@ class SAC_AE(SAC):
         batch_size=16,
         start_steps=10**3,
         update_interval=1,
-        tau=0.01,
-        tau_ae=0.05,
+        tau=0.001,
+        tau_ae=0.01,
         fn_actor=None,
         fn_critic=None,
-        lr_actor=1e-4,
-        lr_critic=1e-4,
-        lr_ae=1e-3,
-        lr_alpha=1e-4,
+        lr_actor=1e-5,
+        lr_critic=1e-6,
+        lr_ae=1e-5,
+        lr_alpha=1e-5,
         units_actor=(32, 32),
         units_critic=(32, 32),
         log_std_min=-10.0,
@@ -51,11 +51,11 @@ class SAC_AE(SAC):
         d2rl=False,
         init_alpha=0.1,
         adam_b1_alpha=0.5,
-        feature_dim=5,
+        feature_dim=10,
         lambda_latent=1e-6,
         lambda_weight=1e-7,
         update_interval_actor=2,
-        update_interval_ae=1,
+        update_interval_ae=2,
         update_interval_target=2,
     ):
         assert len(state_space.shape) == 3 and state_space.shape[:2] == (84, 84)
@@ -86,8 +86,8 @@ class SAC_AE(SAC):
                     d2rl=d2rl,
                 )(x)
 
-        fake_feature = jnp.empty((1, feature_dim))
-        fake_last_conv = jnp.empty((1, 39200))
+        fake_feature = np.random.normal(0, 1, (1, feature_dim)).astype('float32')
+        fake_last_conv = np.random.normal(0, 1, (1, 39200)).astype('float32')
 
         super(SAC_AE, self).__init__(
             num_agent_steps=num_agent_steps,
@@ -114,7 +114,7 @@ class SAC_AE(SAC):
         )
         # Encoder.
         self.encoder = hk.without_apply_rng(hk.transform(lambda s: SACEncoder(num_filters=32, num_layers=4)(s)))
-        self.params_encoder = self.params_encoder_target = self.encoder.init(next(self.rng), jnp.empty(state_space.shape)[None])
+        self.params_encoder = self.params_encoder_target = self.encoder.init(next(self.rng), np.random.randint(0,255,state_space.shape)[None])
 
         # Linear layer for critic and decoder.
         self.linear = hk.without_apply_rng(hk.transform(lambda x: SACLinear(feature_dim=feature_dim)(x)))

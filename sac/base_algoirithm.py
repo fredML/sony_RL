@@ -2,7 +2,6 @@ from abc import ABC, abstractmethod
 from functools import partial
 
 import jax
-import numpy as np
 from haiku import PRNGSequence
 
 from replay_buffer import ReplayBuffer, PrioritizedReplayBuffer, RolloutBuffer
@@ -25,7 +24,6 @@ class BaseAlgorithm(ABC):
         max_grad_norm,
         gamma,
     ):
-        np.random.seed(seed)
         self.rng = PRNGSequence(seed)
 
         self.agent_step = 0
@@ -146,7 +144,7 @@ class OffPolicyAlgorithm(BaseAlgorithm):
         self.episode_step += 1
 
         if self.agent_step <= self.start_steps:
-            action = np.random.uniform(-1,1,2)
+            action = jax.random.uniform(next(self.rng),(2,))
         else:
             action = self.explore(state)
 
@@ -158,7 +156,7 @@ class OffPolicyAlgorithm(BaseAlgorithm):
 
         if done:
             self.episode_step = 0
-            _,_,_,next_state = env.reset()
+            _,_,_, next_state = env.reset()
 
         return next_state
 

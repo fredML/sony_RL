@@ -44,7 +44,7 @@ class SACEncoder(hk.Module):
 
     def __call__(self, x):
         # Floatify the image.
-        x = x.astype(jnp.float32) / 255.0
+        x = jnp.float32(x/255)
         # Apply CNN.
         w_init = hk.initializers.Orthogonal(scale=np.sqrt(2 / (1 + self.negative_slope ** 2)))
         x = hk.Conv2D(self.num_filters, kernel_shape=4, stride=2, padding="VALID", w_init=w_init)(x)
