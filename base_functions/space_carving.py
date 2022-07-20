@@ -3,7 +3,7 @@ import numpy as np
 from skimage.morphology import binary_dilation
 from skimage.transform import resize
 import json
-from PIL import Image, ImageOps
+from PIL import Image
 import glob
 import os
 from copy import deepcopy
@@ -31,7 +31,7 @@ class space_carving_rotation_2d():
         self.n_dilation = params["sc"]["n_dilation"]
         self.voxel_size = params['sc']['voxel_size']
         self.radius = params['traj']['R']
-        self.small_radius = 0.5
+        self.hole_radius = 0.5
 
         self.origin, self.sc, self.last_volume = set_sc(self.bbox, self.voxel_size)
         self.vol_shape = self.sc.values().shape
@@ -43,7 +43,7 @@ class space_carving_rotation_2d():
             self.voxel_weights = np.zeros(self.vol_shape)
             origin_pos = np.array([5,0,0])
             neigh_xyz = origin_pos + np.array([[-h,r*np.cos(theta),r*np.sin(theta)] for theta in
-            np.linspace(0,2*np.pi,10) for r in np.linspace(0,self.small_radius,5) for h in np.linspace(1,9,10)])
+            np.linspace(0,2*np.pi,10) for r in np.linspace(0,self.hole_radius,5) for h in np.linspace(1,9,10)])
             self.neigh_ijk = []
             self.neigh_ijk.append((neigh_xyz - self.origin)/self.voxel_size)
             self.pos = [origin_pos]
@@ -122,7 +122,10 @@ class space_carving_rotation_2d():
         return cp
 
     def get_image_continuous(self, theta, phi):
-        img = rlviewer.grab(self.radius, theta-np.pi/2, phi) 
+        img = rlviewer.grab(self.radius, np.pi/2 - theta, phi) 
+        #self.extrinsics = make_extrinsics(self.radius, angle_to_position_continuous(theta, phi), up = np.array([0,0,1.]))
+        M = rlviewer.get_matrix(self.radius, np.pi/2 - theta, phi).T
+        self.extrinsics = {'R':M[:3,:3], 'T':-M[:3,3]}
         return img
 
     def carve(self, theta, phi):
@@ -143,8 +146,6 @@ class space_carving_rotation_2d():
         self.img = img
         mask = get_mask_black(img)
         self.mask = mask
-        extrinsics = make_extrinsics(self.radius, angle_to_position_continuous(theta, phi))
-        self.extrinsics = extrinsics
         self.space_carve(mask, self.extrinsics)
 
         volume = self.sc.values()
@@ -153,7 +154,8 @@ class space_carving_rotation_2d():
         
     def space_carve(self, mask, rt):
         '''do space carving on mask with preset parameters'''
-        rot = sum(rt['R'], [])
+        #rot = sum(rt['R'], [])
+        rot = np.ndarray.flatten(rt['R'])
         tvec = rt['T']
         '''if self.n_dilation:
             for _ in range(self.n_dilation):

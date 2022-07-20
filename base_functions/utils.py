@@ -66,16 +66,33 @@ def get_intrinsics(scanner):
         scanner.localhost + url_part).read().decode('utf-8'))
     return camera_model['params'][0:4]
 
-def make_extrinsics(radius, pos):
-    pos = pos/np.linalg.norm(pos)
+'''def make_extrinsics(pos, up): #we want to face the X-axis (forward axis) using rotation R
+    norm_pos = pos/np.linalg.norm(pos)
+    if all(norm_pos==up): #if on up axis, need to rotate manually by -90deg around Y axis
+        R = np.array([[0,0,-1],[0,1,0],[1,0,0]])
+    else:
+        R = np.zeros((3,3))
+        R[2] = norm_pos
+        R[0] = np.cross(up, norm_pos)
+        R[1] = np.cross(R[2],R[0])
+
+    T = np.dot(R,-pos)
+    return {'R':R.tolist(), 'T':T.tolist()}'''
+
+def make_extrinsics(radius, pos, up):
+    #pos = pos/np.linalg.norm(pos)
     n = len(pos)
     up = np.array([0,0,1])
     R = np.zeros((n,n))
-    R[2] = -pos
+    R[2] = pos
     R[0] = np.cross(up,pos)
+    R[0] = R[0]/np.linalg.norm(R[0])
     R[1] = np.cross(R[2],R[0])
+    R[1] = R[1]/np.linalg.norm(R[1])
 
-    return {'R':R.tolist(), 'T':[0,0, radius]}
+    T = np.array([0, 0, radius])
+
+    return {'R':R, 'T':T}
 
 def angle_to_position(theta, phi):
     return np.array([np.cos(2*phi*np.pi/180)*np.sin((theta+1)*np.pi/8),
