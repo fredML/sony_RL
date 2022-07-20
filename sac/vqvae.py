@@ -69,7 +69,7 @@ class Encoder(hk.Module):
 
 
 class Decoder(hk.Module):
-  def __init__(self, num_hiddens, num_residual_layers, num_residual_hiddens,
+  def __init__(self, num_hiddens, num_residual_layers, num_residual_hiddens, output_channels,
                name=None):
     super(Decoder, self).__init__(name=name)
     self._num_hiddens = num_hiddens
@@ -92,7 +92,7 @@ class Decoder(hk.Module):
         stride=(2, 2),
         name="dec_2")
     self._dec_3 = hk.Conv2DTranspose(
-        output_channels=3,
+        output_channels=output_channels,
         # output_shape=None,
         kernel_shape=(4, 4),
         stride=(2, 2),
@@ -130,10 +130,10 @@ class VQModel(hk.Module):
     }
 
 class VQVAE(hk.Module):
-    def __init__(self, embedding_dim, num_embeddings, num_hiddens, num_residual_layers, num_residual_hiddens, commitment_cost, decay, vq_use_ema=True):
+    def __init__(self, embedding_dim, num_embeddings, num_hiddens, num_residual_layers, num_residual_hiddens, commitment_cost, decay, output_channels, vq_use_ema=True):
         super().__init__()
         self.encoder = Encoder(num_hiddens, num_residual_layers, num_residual_hiddens)
-        self.decoder = Decoder(num_hiddens, num_residual_layers, num_residual_hiddens)
+        self.decoder = Decoder(num_hiddens, num_residual_layers, num_residual_hiddens, output_channels)
         pre_vq_conv1 = hk.Conv2D(
             output_channels=embedding_dim,
             kernel_shape=(1, 1),

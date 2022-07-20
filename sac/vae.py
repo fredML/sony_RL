@@ -56,11 +56,12 @@ class Encoder(hk.Module):
         return mu, log_var
 
 class Decoder(hk.Module):
-    def __init__(self, last_conv_shape, filter_sizes):
+    def __init__(self, last_conv_shape, filter_sizes, output_channels):
         super().__init__()
         self.filter_sizes = filter_sizes
         self.last_conv_shape = last_conv_shape
         self.n = self.last_conv_shape*self.last_conv_shape*self.filter_sizes[0]
+        self.output_channels = output_channels
     
     def __call__(self, s, is_training):
         s = jax.nn.leaky_relu(s, 0.01)
@@ -68,28 +69,29 @@ class Decoder(hk.Module):
         s = s.reshape(-1, self.last_conv_shape, self.last_conv_shape, self.filter_sizes[0])
         for filter_size in self.filter_sizes:
             s = UpBlock(filter_size)(s, is_training)
-        s = hk.Conv2D(3, kernel_shape=3, padding='SAME')(s)
+        s = hk.Conv2D(self.output_channels, kernel_shape=3, padding='SAME')(s)
         return jax.nn.sigmoid(s)
 
 class DecoderNoBN(hk.Module):
-    def __init__(self, filter_sizes):
+    def __init__(self, filter_sizes, output_channels):
         super().__init__()
         self.filter_sizes = filter_sizes
+        self.output_channels = output_channels
     
     def __call__(self, s):
         for filter_size in self.filter_sizes:
             s = UpBlockNoBN(filter_size)(s)
-        s = hk.Conv2D(3, kernel_shape=3, padding='SAME')(s)
-        return s
+        s = hk.Conv2D(self.output_channels, kernel_shape=3, padding='SAME')(s)
+        return jax.nn.sigmoid(s)
 
 class VAE(hk.Module): 
 
-    def __init__(self, input_size, latent_dim, filter_sizes):
+    def __init__(self, input_size, latent_dim, filter_sizes, output_channels):
         super().__init__()
         self.encoder = Encoder(latent_dim, filter_sizes)
         n = len(filter_sizes)
         last_conv_shape = input_size//2**n
-        self.decoder = Decoder(last_conv_shape, filter_sizes[::-1])
+        self.decoder = Decoder(last_conv_shape, filter_sizes[::-1], output_channels)
 
     def __call__(self, s, is_training):
         mu, log_var = self.encoder(s, is_training)
@@ -101,7 +103,7 @@ class VAE(hk.Module):
         return recons, latent, mu, log_var
 
 class ResNetVAE(hk.Module):
-    def __init__(self, latent_dim, filter_sizes, weights, pooling):
+    def __init__(self, latent_dim, filter_sizes, weights, pooling, output_channels):
         import os
         path = os.getcwd()
         os.chdir('/mnt/diskSustainability/frederic/haikumodels') 
@@ -111,7 +113,7 @@ class ResNetVAE(hk.Module):
         super().__init__()
         self.latent_dim = latent_dim
         self.encoder = hm.ResNet50(include_top=False, weights=weights, pooling=pooling)
-        self.decoder = DecoderNoBN(filter_sizes[::-1])
+        self.decoder = DecoderNoBN(filter_sizes[::-1], output_channels)
         self.enc_shape = (1,4,4,2048)
         self.enc_flattened_shape = 4*4*2048
     
