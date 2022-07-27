@@ -16,9 +16,10 @@ platform = cl.get_platforms()
 devices = platform[0].get_devices(cl.device_type.GPU)
 print(devices)
 
-os.environ['PYOPENCL_CTX'] = '0'
+'''os.environ['PYOPENCL_CTX'] = '0'
+ctx = cl.create_some_context()'''
 
-ctx = cl.create_some_context()
+ctx = cl.Context([devices[0]])
 queue = cl.CommandQueue(ctx)
 mf = cl.mem_flags
 
