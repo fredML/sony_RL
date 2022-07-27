@@ -74,27 +74,35 @@ class Decoder(hk.Module):
         super().__init__()
         self.filter_sizes = filter_sizes
         self.last_conv_shape = last_conv_shape
-        self.n = self.last_conv_shape*self.last_conv_shape*self.filter_sizes[0]
+        #self.n = self.last_conv_shape*self.last_conv_shape*self.filter_sizes[0]
+        #self.n = jnp.prod(jnp.array(last_conv_shape))
+        self.n = last_conv_shape[0]*last_conv_shape[1]*last_conv_shape[2] #can't use jnp prod in jit for some unknown reason
         self.output_channels = output_channels
         self.final_activation = final_activation
     
     def __call__(self, s, is_training):
         s = jax.nn.leaky_relu(s, 0.01)
         s = hk.Linear(self.n)(s)
-        s = s.reshape(-1, self.last_conv_shape, self.last_conv_shape, self.filter_sizes[0])
+        #s = s.reshape(-1, self.last_conv_shape, self.last_conv_shape, self.filter_sizes[0])
+        s = s.reshape(-1,*self.last_conv_shape)
         for filter_size in self.filter_sizes:
             s = UpBlock(filter_size)(s, is_training)
         s = hk.Conv2D(self.output_channels, kernel_shape=3, padding='SAME')(s)
         return self.final_activation(s)
 
 class DecoderNoBN(hk.Module):
-    def __init__(self, filter_sizes, output_channels, final_activation):
+    def __init__(self, last_conv_shape, filter_sizes, output_channels, final_activation):
         super().__init__()
         self.filter_sizes = filter_sizes
+        self.last_conv_shape = last_conv_shape
+        self.n = last_conv_shape[0]*last_conv_shape[1]*last_conv_shape[2]
         self.output_channels = output_channels
         self.final_activation = final_activation
     
-    def __call__(self, s):
+    def __call__(self, s, is_training): #is_training arg is used for compatibility
+        s = jax.nn.leaky_relu(s, 0.01)
+        s = hk.Linear(self.n)(s)
+        s = s.reshape(-1,*self.last_conv_shape)
         for filter_size in self.filter_sizes:
             s = UpBlockNoBN(filter_size)(s)
         s = hk.Conv2D(self.output_channels, kernel_shape=3, padding='SAME')(s)
@@ -158,10 +166,9 @@ class ResNetVAE(hk.Module):
         log_var = hk.Linear(self.latent_dim)(h)
         sigma = jnp.exp(0.5*log_var)*encoder_training
         latent = mu + np.random.normal(0, 1, size=sigma.shape)*sigma
-        h = jax.nn.leaky_relu(latent, 0.01)
-        h = hk.Linear(self.enc_flattened_shape)(h)
-        h = h.reshape(-1, 4, 4, 2048)
-        recons = self.decoder(h)
+
+        recons = self.decoder(latent, encoder_bn_training)
+
         return recons, latent, mu, log_var
 
 def kl_gaussian(mean: jnp.ndarray, log_var: jnp.ndarray) -> jnp.ndarray:
