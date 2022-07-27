@@ -105,16 +105,16 @@ class SAC(OffPolicyActorCritic):
                                                                           np.random.uniform(-1,1,action_space.shape)[None].astype('float32'))                                                                                
         self.params_actor = self.actor.init(next(self.rng), np.random.uniform(-1,1,state_space.shape)[None].astype('float32'))
     
-        opt_init, self.opt_critic = optax.adam(lr_critic)
+        opt_init, self.opt_critic = optax.radam(lr_critic)
         self.opt_state_critic = opt_init(self.params_critic)
         
-        opt_init, self.opt_actor = optax.adam(lr_actor)
+        opt_init, self.opt_actor = optax.radam(lr_actor)
         self.opt_state_actor = opt_init(self.params_actor)
         # Entropy coefficient.
         if not hasattr(self, "target_entropy"):
             self.target_entropy = -float(self.action_space.shape[0])
         self.log_alpha = jnp.array(np.log(init_alpha), dtype=jnp.float32)
-        opt_init, self.opt_alpha = optax.adam(lr_alpha, b1=adam_b1_alpha)
+        opt_init, self.opt_alpha = optax.radam(lr_alpha, b1=adam_b1_alpha)
         self.opt_state_alpha = opt_init(self.log_alpha)
 
     @partial(jax.jit, static_argnums=0)
@@ -189,7 +189,7 @@ class SAC(OffPolicyActorCritic):
         # Update target network.
         self.params_critic_target = self._update_target(self.params_critic_target, self.params_critic)
 
-        if writer and self.learning_step % 1000 == 0:
+        if writer and self.agent_step % 1000 == 0:
             writer.add_scalar("episode/target_q", target.mean(), self.learning_step)
             writer.add_scalar("episode/mean_q", q_val.mean(), self.learning_step)
             writer.add_scalar("episode/done", done.mean(), self.learning_step)
