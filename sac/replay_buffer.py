@@ -63,14 +63,14 @@ class ReplayBuffer:
         gamma,
         nstep,
     ):
-        assert len(state_space.shape) in (1, 3)
+        #assert len(state_space.shape) in (1, 3)
 
         self._n = 0
         self._p = 0
         self.buffer_size = buffer_size
         self.nstep = nstep
         self.state_shape = state_space.shape
-        self.use_image = len(self.state_shape) == 3
+        self.use_image = len(self.state_shape) >= 3
 
         if self.use_image:
             # Store images as a list of LazyFrames, which uses 4 times less memory.

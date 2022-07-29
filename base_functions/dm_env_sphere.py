@@ -8,7 +8,7 @@ import cv2 as cv
 
 class SphereEnv(dm_env.Environment):
 
-    def __init__(self, objects_path, img_shape, voxel_weights=None, rmax=0.9, k_d=0, k_t=0, apply_ae=None, params_ae=None):
+    def __init__(self, objects_path, img_shape, last_k = 3, voxel_weights=None, rmax=0.9, k_d=0, k_t=0):
 
         super(SphereEnv, self).__init__()
         self.objects_path = objects_path
@@ -26,9 +26,6 @@ class SphereEnv(dm_env.Environment):
         self.opt_pos = self.sphere_radius * angle_to_position_continuous(self.opt_theta, self.opt_phi).T
 
         self.img_shape = img_shape # for reshaping images
-        self.apply_ae = apply_ae
-        if params_ae is not None:
-            self.params_ae, self.bn_ae_state = params_ae
 
         neigh_xyz = []
         dtheta = 6*np.pi/180
@@ -41,6 +38,8 @@ class SphereEnv(dm_env.Environment):
         
         neigh_xyz = np.array(neigh_xyz)
         self.neigh_xyz = neigh_xyz
+
+        self.last_k = last_k
 
     def reset(self, theta_init=-1, phi_init=-1) -> dm_env.TimeStep:
         self.num_steps = 0
@@ -80,27 +79,15 @@ class SphereEnv(dm_env.Environment):
         img_gray = np.array(pil_img.convert('L'))
         self.img_gray = img_gray[...,None]
 
-        self.last_k_pos = np.concatenate((pos, pos, pos))
-        #self.opt_dist = np.linalg.norm(self.pos - self.opt_pos, axis=1)
+        canny = cv.Canny(img_gray, 40, 80)[...,None] * 1.
+        self.canny = canny 
+                        
+        self.last_k_img = np.stack([self.canny]*self.last_k, axis=0) # shape (k,img_size,img_size,1)
+        self.observation = self.last_k_img
 
-        if self.apply_ae is not None:
-            if self.bn_ae_state is not None:
-                canny = cv.Canny(img_gray, 40, 80)[...,None]
-                canny = canny * 1.
-                vae_output, _ = self.apply_ae(self.params_ae, self.bn_ae_state, canny[None], False)
-                '''latent = np.array(vae_output['vq_output']['quantize'][0]) 
-                latent = latent.mean(axis=(0,1))'''
-                latent = vae_output[1][0]
-                
-            else:
-                _, latent = self.apply_ae(self.params_ae, self.img[None])
-  
-            self.observation = np.concatenate((latent, latent, latent))
-        
-        else:
-            self.last_k_img = np.concatenate((img_gray,img_gray,img_gray), axis=-1)
-            self.observation = self.last_k_img
-            #self.observation = self.last_k_pos.astype('float32')
+        self.last_k_pos = np.concatenate([pos]*self.last_k)
+        #self.observation = self.last_k_pos.astype('float32')
+        #self.opt_dist = np.linalg.norm(self.pos - self.opt_pos, axis=1)
 
         self.observation_shape = self.observation.shape
 
@@ -147,24 +134,15 @@ class SphereEnv(dm_env.Environment):
         else:
             self.reward = -self.k_t
 
-        if self.apply_ae is not None:
-            if self.bn_ae_state is not None:
-                canny = cv.Canny(img_gray, 40, 80)[...,None]
-                canny = canny * 1.
-                vae_output, _ = self.apply_ae(self.params_ae, self.bn_ae_state, canny[None], False)
-                '''latent = np.array(vae_output['vq_output']['quantize'][0]) 
-                latent = latent.mean(axis=(0,1))'''
-                latent = vae_output[1][0]
-                
-            else:
-                _, latent = self.apply_ae(self.params_ae, self.img[None])
+        canny = cv.Canny(img_gray, 40, 80)[...,None] * 1.
+        self.canny = canny
+                        
+        self.last_k_img = np.concatenate((self.last_k_img[1:], self.canny[None]), axis=0) # shape (k,img_size,img_size,1)
+        self.observation = self.last_k_img
 
-            self.observation = np.concatenate((self.observation[len(latent):], latent))
-        
-        else:
-            self.last_k_img = np.concatenate((self.last_k_img[...,1:], img_gray), axis=-1)
-            self.observation = self.last_k_img
-            #self.observation = self.last_k_pos.astype('float32')
+        #self.observation = self.last_k_pos.astype('float32')
+
+        self.observation_shape = self.observation.shape
 
         if self.total_reward > self.max_reward:
             return dm_env.termination(reward=self.reward*1., observation=self.observation)
@@ -212,24 +190,15 @@ class SphereEnv(dm_env.Environment):
         else:
             self.reward = -self.k_t
 
-        if self.apply_ae is not None:
-            if self.bn_ae_state is not None:
-                canny = cv.Canny(img_gray, 40, 80)[...,None]
-                canny = canny * 1.
-                vae_output, _ = self.apply_ae(self.params_ae, self.bn_ae_state, canny[None], False)
-                '''latent = np.array(vae_output['vq_output']['quantize'][0]) 
-                latent = latent.mean(axis=(0,1))'''
-                latent = vae_output[1][0]
-                
-            else:
-                _, latent = self.apply_ae(self.params_ae, self.img[None])
-            
-            self.observation = np.concatenate((self.observation[len(latent):], latent))
-        
-        else:
-            self.last_k_img = np.concatenate((self.last_k_img[...,1:], img_gray), axis=-1)
-            self.observation = self.last_k_img
-            #self.observation = self.last_k_pos.astype('float32')
+        canny = cv.Canny(img_gray, 40, 80)[...,None] * 1.
+        self.canny = canny
+                        
+        self.last_k_img = np.concatenate((self.last_k_img[1:], self.canny[None]), axis=0) # shape (k,img_size,img_size,1)
+        self.observation = self.last_k_img
+
+        #self.observation = self.last_k_pos.astype('float32')
+
+        self.observation_shape = self.observation.shape
 
         if self.total_reward > self.max_reward:
             return dm_env.termination(reward=self.reward*1., observation=self.observation)

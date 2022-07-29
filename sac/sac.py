@@ -25,6 +25,9 @@ class SAC(OffPolicyActorCritic):
         state_space,
         action_space,
         seed,
+        encoder = None,
+        update_encoder = False,
+        update_encoder_interval = 1000,
         max_grad_norm=None,
         gamma=0.99,
         nstep=1,
@@ -98,12 +101,21 @@ class SAC(OffPolicyActorCritic):
 
         self.critic = hk.without_apply_rng(hk.transform(fn_critic))
         self.actor = hk.without_apply_rng(hk.transform(fn_actor))
-                                                                                        
+
+        self.encoder = encoder
+        self.update_encoder = update_encoder
+        self.update_encoder_interval = update_encoder_interval
+
+        if encoder is not None:
+            vae_apply_jit, params_vae, bn_vae_state = self.encoder
+            dummy_state, _ = vae_apply_jit(params_vae, bn_vae_state, np.random.uniform(0,1,state_space.shape[1:])[None], False)
+            dummy_state = dummy_state[1]
+        dummy_action = np.random.uniform(-1,1,action_space.shape)[None]
 
         self.params_critic = self.params_critic_target = self.critic.init(next(self.rng), 
-                                                                          np.random.uniform(-1,1,state_space.shape)[None].astype('float32'),
-                                                                          np.random.uniform(-1,1,action_space.shape)[None].astype('float32'))                                                                                
-        self.params_actor = self.actor.init(next(self.rng), np.random.uniform(-1,1,state_space.shape)[None].astype('float32'))
+                                                                          dummy_state,
+                                                                          dummy_action)                                                                                
+        self.params_actor = self.actor.init(next(self.rng), dummy_action)
     
         opt_init, self.opt_critic = optax.radam(lr_critic)
         self.opt_state_critic = opt_init(self.params_critic)
@@ -123,6 +135,12 @@ class SAC(OffPolicyActorCritic):
         params_actor: hk.Params,
         state: np.ndarray,
     ) -> jnp.ndarray:
+        if self.encoder is not None:
+            state = jnp.reshape(state, (-1, *state.shape[2:]))
+            vae_apply_jit, params_vae, bn_vae_state = self.encoder
+            state, _ = vae_apply_jit(params_vae, bn_vae_state, state, False)
+            state = state[1]
+            state = jnp.reshape(state, (1, -1))
         mean, _ = self.actor.apply(params_actor, state)
         return jnp.tanh(mean)
 
@@ -133,6 +151,12 @@ class SAC(OffPolicyActorCritic):
         state: np.ndarray,
         key: jnp.ndarray,
     ) -> Tuple[jnp.ndarray, jnp.ndarray]:
+        if self.encoder is not None:
+            state = jnp.reshape(state, (-1, *state.shape[2:]))
+            vae_apply_jit, params_vae, bn_vae_state = self.encoder
+            state, _ = vae_apply_jit(params_vae, bn_vae_state, state, False)
+            state = state[1]
+            state = jnp.reshape(state, (1, -1))
         mean, log_std = self.actor.apply(params_actor, state)
         return reparameterize_gaussian_and_tanh(mean, log_std, key, False)
 
@@ -141,6 +165,26 @@ class SAC(OffPolicyActorCritic):
         weight, batch = self.buffer.sample(self.batch_size)
         state, action, reward, done, next_state = batch
 
+        if self.encoder is not None:
+
+            state = jnp.reshape(state, (-1, *state.shape[2:])) #need to reshape from (bs, k, img_size, img_size, 1) to (bs*k,...)
+            next_state = jnp.reshape(next_state, (-1, *next_state.shape[2:]))
+            vae_apply_jit, params_vae, bn_vae_state = self.encoder
+
+            if (self.update_encoder) & (self.agent_step % self.update_encoder_interval == 0):
+                state, _ = vae_apply_jit(params_vae, bn_vae_state, state, True)
+                state = state[1]
+                next_state, _ = vae_apply_jit(params_vae, bn_vae_state, next_state, True)
+                next_state = next_state[1]
+                
+            else:
+                state, _ = jax.lax.stop_gradient(vae_apply_jit(params_vae, bn_vae_state, state, False))
+                state = state[1]
+                next_state, _ = jax.lax.stop_gradient(vae_apply_jit(params_vae, bn_vae_state, next_state, False))
+                next_state = next_state[1]
+
+            state = jnp.reshape(state, (self.batch_size, -1)) # output of vae is (bs*k, latent_dim), need to reshape (bs,k*latent_dim)
+            next_state = jnp.reshape(next_state, (self.batch_size, -1))
         # Update critic.
         self.opt_state_critic, self.params_critic, loss_critic, (abs_td, target, q_val) = optimize(
             self._loss_critic,
@@ -207,6 +251,12 @@ class SAC(OffPolicyActorCritic):
         state: np.ndarray,
         key: jnp.ndarray,
     ) -> Tuple[jnp.ndarray, jnp.ndarray]:
+        if self.encoder is not None:
+            state = jnp.reshape(state, (-1, *state.shape[2:]))
+            vae_apply_jit, params_vae, bn_vae_state = self.encoder
+            state = vae_apply_jit(params_vae, bn_vae_state, state, False)
+            state = state[1]
+            state = jnp.reshape(state, (1, -1))
         mean, log_std = self.actor.apply(params_actor, state)
         return reparameterize_gaussian_and_tanh(mean, log_std, key, True)
 
