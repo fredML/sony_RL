@@ -16,5 +16,12 @@ def save_params(params, path):
 def load_params(path):
     """
     Load parameters.
+    for some reason, numpy load convert all params to np array format not compatible with JAX
     """
-    return hk.data_structures.to_immutable_dict(np.load(path))
+
+    params = np.load(path, allow_pickle=True)
+    new_params = {}
+    for files in params.files:
+        new_params[files] = params[files][()]
+    return new_params
+    #return hk.data_structures.to_immutable_dict(np.load(path,allow_pickle=True))

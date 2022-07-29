@@ -74,17 +74,14 @@ class Decoder(hk.Module):
         super().__init__()
         self.filter_sizes = filter_sizes
         self.last_conv_shape = last_conv_shape
-        #self.n = self.last_conv_shape*self.last_conv_shape*self.filter_sizes[0]
-        #self.n = jnp.prod(jnp.array(last_conv_shape))
-        self.n = last_conv_shape[0]*last_conv_shape[1]*last_conv_shape[2] #can't use jnp prod in jit for some unknown reason
+        self.n = last_conv_shape*last_conv_shape*filter_sizes[0] #can't use jnp prod in jit for some unknown reason
         self.output_channels = output_channels
         self.final_activation = final_activation
     
     def __call__(self, s, is_training):
         s = jax.nn.leaky_relu(s, 0.01)
         s = hk.Linear(self.n)(s)
-        #s = s.reshape(-1, self.last_conv_shape, self.last_conv_shape, self.filter_sizes[0])
-        s = s.reshape(-1,*self.last_conv_shape)
+        s = s.reshape(-1, self.last_conv_shape, self.last_conv_shape, self.filter_sizes[0])
         for filter_size in self.filter_sizes:
             s = UpBlock(filter_size)(s, is_training)
         s = hk.Conv2D(self.output_channels, kernel_shape=3, padding='SAME')(s)
@@ -95,14 +92,14 @@ class DecoderNoBN(hk.Module):
         super().__init__()
         self.filter_sizes = filter_sizes
         self.last_conv_shape = last_conv_shape
-        self.n = last_conv_shape[0]*last_conv_shape[1]*last_conv_shape[2]
+        self.n = last_conv_shape*last_conv_shape*filter_sizes[0]
         self.output_channels = output_channels
         self.final_activation = final_activation
     
     def __call__(self, s, is_training): #is_training arg is used for compatibility
         s = jax.nn.leaky_relu(s, 0.01)
         s = hk.Linear(self.n)(s)
-        s = s.reshape(-1,*self.last_conv_shape)
+        s = s.reshape(-1, self.last_conv_shape, self.last_conv_shape, self.filter_sizes[0])
         for filter_size in self.filter_sizes:
             s = UpBlockNoBN(filter_size)(s)
         s = hk.Conv2D(self.output_channels, kernel_shape=3, padding='SAME')(s)
@@ -140,6 +137,10 @@ class VAE(hk.Module):
         recons = self.decoder(latent, is_training)
 
         return recons, latent, mu, log_var
+
+    def encoder(self, s):
+        mu, log_var = self.encoder(s, False)
+        return mu
 
 class ResNetVAE(hk.Module):
     def __init__(self, latent_dim, filter_sizes, weights, pooling, output_channels, final_activation):
