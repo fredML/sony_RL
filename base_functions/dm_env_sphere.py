@@ -83,7 +83,7 @@ class SphereEnv(dm_env.Environment):
         self.canny = canny 
                         
         self.last_k_img = np.stack([self.canny]*self.last_k, axis=0) # shape (k,img_size,img_size,1)
-        self.observation = self.last_k_img
+        self.observation = self.last_k_img.astype('float32')
 
         self.last_k_pos = np.concatenate([pos]*self.last_k)
         #self.observation = self.last_k_pos.astype('float32')
@@ -138,7 +138,7 @@ class SphereEnv(dm_env.Environment):
         self.canny = canny
                         
         self.last_k_img = np.concatenate((self.last_k_img[1:], self.canny[None]), axis=0) # shape (k,img_size,img_size,1)
-        self.observation = self.last_k_img
+        self.observation = self.last_k_img.astype('float32')
 
         #self.observation = self.last_k_pos.astype('float32')
 
@@ -194,7 +194,7 @@ class SphereEnv(dm_env.Environment):
         self.canny = canny
                         
         self.last_k_img = np.concatenate((self.last_k_img[1:], self.canny[None]), axis=0) # shape (k,img_size,img_size,1)
-        self.observation = self.last_k_img
+        self.observation = self.last_k_img.astype('float32')
 
         #self.observation = self.last_k_pos.astype('float32')
 

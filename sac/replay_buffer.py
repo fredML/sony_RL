@@ -125,7 +125,7 @@ class ReplayBuffer:
 
     def _sample(self, idxes):
         if self.use_image:
-            state = np.empty((len(idxes), *self.state_shape), dtype=np.uint8)
+            state = np.empty((len(idxes), *self.state_shape))
             next_state = state.copy()
             for i, idx in enumerate(idxes):
                 state[i, ...] = self.state[idx]
