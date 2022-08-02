@@ -43,8 +43,6 @@ class SACEncoder(hk.Module):
         self.negative_slope = negative_slope
 
     def __call__(self, x):
-        # Floatify the image.
-        x = jnp.float32(x/255)
         # Apply CNN.
         w_init = hk.initializers.Orthogonal(scale=np.sqrt(2 / (1 + self.negative_slope ** 2)))
         x = hk.Conv2D(self.num_filters, kernel_shape=4, stride=2, padding="VALID", w_init=w_init)(x)
@@ -67,7 +65,7 @@ class SACDecoder(hk.Module):
         self.num_layers = num_layers
         self.num_filters = num_filters
         self.negative_slope = negative_slope
-        self.map_size = 43 - 2 * num_layers
+        self.map_size = state_space[1]//2
         self.last_conv_dim = num_filters * self.map_size * self.map_size
 
     def __call__(self, x):
