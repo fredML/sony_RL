@@ -69,7 +69,7 @@ class StateDependentGaussianPolicy(hk.Module):
         if self.clip_log_std:
             log_std = jnp.clip(log_std, self.log_std_min, self.log_std_max)
         else:
-            log_std = self.log_std_min + 0.5 * (self.log_std_max - self.log_std_min) * (jnp.tanh(log_std) + 1.0)
+            log_std = self.log_std_min + 0.5 * (self.log_std_max - self.log_std_min) * (jnp.tanh(log_std) + 1.0) # why this formula
         return mean, log_std
 
 

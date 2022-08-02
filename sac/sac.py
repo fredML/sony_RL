@@ -26,8 +26,6 @@ class SAC(OffPolicyActorCritic):
         action_space,
         seed,
         encoder = None,
-        update_encoder = False,
-        update_encoder_interval = 1000,
         max_grad_norm=None,
         gamma=0.99,
         nstep=1,
@@ -99,32 +97,36 @@ class SAC(OffPolicyActorCritic):
                     d2rl=d2rl,
                 )(s)
 
-        self.critic = hk.without_apply_rng(hk.transform(fn_critic))
-        self.actor = hk.without_apply_rng(hk.transform(fn_actor))
+        critic_init, critic_apply = hk.without_apply_rng(hk.transform(fn_critic))
+        self.critic_apply_jit = jax.jit(critic_apply)
+        actor_init, actor_apply = hk.without_apply_rng(hk.transform(fn_actor))
+        self.actor_apply_jit = jax.jit(actor_apply)
 
-        self.encoder = encoder
-        self.update_encoder = update_encoder
-        self.update_encoder_interval = update_encoder_interval
-
-        if encoder is not None:
-            vae_apply_jit, params_vae, bn_vae_state = self.encoder
-            dummy_state, _ = vae_apply_jit(params_vae, bn_vae_state, np.random.uniform(0,1,state_space.shape[1:])[None], False)
-            dummy_state = dummy_state[1]
+        dummy_state = np.random.uniform(0,1,(1,15))
         dummy_action = np.random.uniform(-1,1,action_space.shape)[None]
 
-        self.params_critic = self.params_critic_target = self.critic.init(next(self.rng), 
+        self.encoder = encoder
+        if encoder is not None:
+            vae_apply_jit, params_vae, bn_vae_state = self.encoder
+            dummy_state, _ = vae_apply_jit(params_vae, bn_vae_state, np.random.uniform(0,1,state_space.shape), False)
+            dummy_state = dummy_state[1]
+            dummy_state = dummy_state.reshape((1,-1))
+
+        self.params_critic = self.params_critic_target = critic_init(next(self.rng), 
                                                                           dummy_state,
                                                                           dummy_action)                                                                                
-        self.params_actor = self.actor.init(next(self.rng), dummy_action)
+        self.params_actor = actor_init(next(self.rng), dummy_state)
     
         opt_init, self.opt_critic = optax.radam(lr_critic)
         self.opt_state_critic = opt_init(self.params_critic)
         
         opt_init, self.opt_actor = optax.radam(lr_actor)
         self.opt_state_actor = opt_init(self.params_actor)
+
         # Entropy coefficient.
         if not hasattr(self, "target_entropy"):
             self.target_entropy = -float(self.action_space.shape[0])
+
         self.log_alpha = jnp.array(np.log(init_alpha), dtype=jnp.float32)
         opt_init, self.opt_alpha = optax.radam(lr_alpha, b1=adam_b1_alpha)
         self.opt_state_alpha = opt_init(self.log_alpha)
@@ -141,7 +143,7 @@ class SAC(OffPolicyActorCritic):
             state, _ = vae_apply_jit(params_vae, bn_vae_state, state, False)
             state = state[1]
             state = jnp.reshape(state, (1, -1))
-        mean, _ = self.actor.apply(params_actor, state)
+        mean, _ = self.actor_apply_jit(params_actor, state)
         return jnp.tanh(mean)
 
     @partial(jax.jit, static_argnums=0)
@@ -157,7 +159,7 @@ class SAC(OffPolicyActorCritic):
             state, _ = vae_apply_jit(params_vae, bn_vae_state, state, False)
             state = state[1]
             state = jnp.reshape(state, (1, -1))
-        mean, log_std = self.actor.apply(params_actor, state)
+        mean, log_std = self.actor_apply_jit(params_actor, state)
         return reparameterize_gaussian_and_tanh(mean, log_std, key, False)
 
     def update(self, writer=None):
@@ -171,20 +173,14 @@ class SAC(OffPolicyActorCritic):
             next_state = jnp.reshape(next_state, (-1, *next_state.shape[2:]))
             vae_apply_jit, params_vae, bn_vae_state = self.encoder
 
-            if (self.update_encoder) & (self.agent_step % self.update_encoder_interval == 0):
-                state, _ = vae_apply_jit(params_vae, bn_vae_state, state, True)
-                state = state[1]
-                next_state, _ = vae_apply_jit(params_vae, bn_vae_state, next_state, True)
-                next_state = next_state[1]
-                
-            else:
-                state, _ = jax.lax.stop_gradient(vae_apply_jit(params_vae, bn_vae_state, state, False))
-                state = state[1]
-                next_state, _ = jax.lax.stop_gradient(vae_apply_jit(params_vae, bn_vae_state, next_state, False))
-                next_state = next_state[1]
+            state, _ = jax.lax.stop_gradient(vae_apply_jit(params_vae, bn_vae_state, state, False)) #stop_gradient is useless
+            state = state[1]
+            next_state, _ = jax.lax.stop_gradient(vae_apply_jit(params_vae, bn_vae_state, next_state, False))
+            next_state = next_state[1]
 
             state = jnp.reshape(state, (self.batch_size, -1)) # output of vae is (bs*k, latent_dim), need to reshape (bs,k*latent_dim)
             next_state = jnp.reshape(next_state, (self.batch_size, -1))
+            
         # Update critic.
         self.opt_state_critic, self.params_critic, loss_critic, (abs_td, target, q_val) = optimize(
             self._loss_critic,
@@ -251,13 +247,13 @@ class SAC(OffPolicyActorCritic):
         state: np.ndarray,
         key: jnp.ndarray,
     ) -> Tuple[jnp.ndarray, jnp.ndarray]:
-        if self.encoder is not None:
+        if (self.encoder is not None) & (len(state.shape) > 2):
             state = jnp.reshape(state, (-1, *state.shape[2:]))
             vae_apply_jit, params_vae, bn_vae_state = self.encoder
             state = vae_apply_jit(params_vae, bn_vae_state, state, False)
             state = state[1]
             state = jnp.reshape(state, (1, -1))
-        mean, log_std = self.actor.apply(params_actor, state)
+        mean, log_std = self.actor_apply_jit(params_actor, state)
         return reparameterize_gaussian_and_tanh(mean, log_std, key, True)
 
     @partial(jax.jit, static_argnums=0)

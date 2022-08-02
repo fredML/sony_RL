@@ -147,7 +147,7 @@ class OffPolicyActorCritic(ActorCriticMixIn, OffPolicyAlgorithm):
         state: np.ndarray,
         action: np.ndarray,
     ) -> List[jnp.ndarray]:
-        return self.critic.apply(params_critic, state, action)
+        return self.critic_apply_jit(params_critic, state, action)
 
     @partial(jax.jit, static_argnums=0)
     def _calculate_value(
