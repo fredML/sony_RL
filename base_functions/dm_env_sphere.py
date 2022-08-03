@@ -79,16 +79,24 @@ class SphereEnv(dm_env.Environment):
         img_gray = np.array(pil_img.convert('L'))
         self.img_gray = img_gray[...,None]
 
-        canny = cv.Canny(img_gray, 40, 80)[...,None] * 1.
+        canny = cv.Canny(img_gray, 40, 80)[...,None] 
         self.canny = canny 
-                        
-        self.last_k_img = np.stack([self.canny]*self.last_k, axis=0) # shape (k,img_size,img_size,1)
-        self.observation = self.last_k_img.astype('float32')
 
-        self.last_k_pos = np.concatenate([pos]*self.last_k)
+        p = self.img_shape//32
+        flattened_img = np.array([np.mean(canny[32*i:32*(i+1), 32*j:32*(j+1)]) for i in range(p) for j in range (p)])
+
+        if self.last_k > 1:
+                        
+            self.last_k_img = np.stack([self.canny]*self.last_k, axis=0) # shape (k,img_size,img_size,1)
+            self.last_k_pos = np.concatenate([pos]*self.last_k)
+        
+        else:
+            self.last_k_img = self.canny
+            self.last_k_pos = pos
+
         #self.observation = self.last_k_pos.astype('float32')
         #self.opt_dist = np.linalg.norm(self.pos - self.opt_pos, axis=1)
-
+        self.observation = self.last_k_img.astype('float32')
         self.observation_shape = self.observation.shape
 
         return dm_env.restart(self.observation)
@@ -122,8 +130,23 @@ class SphereEnv(dm_env.Environment):
         self.img = np.array(pil_img)
         img_gray = np.array(pil_img.convert('L'))
         self.img_gray = img_gray[...,None]
+
+        canny = cv.Canny(img_gray, 40, 80)[...,None] 
+        self.canny = canny
+
+        p = self.img_shape//32
+        flattened_img = np.array([np.mean(canny[32*i:32*(i+1), 32*j:32*(j+1)]) for i in range(p) for j in range (p)])
+                        
+        if self.last_k > 1:
+                        
+            self.last_k_img = np.stack([self.canny]*self.last_k, axis=0) # shape (k,img_size,img_size,1)
+            self.last_k_pos = np.concatenate([pos]*self.last_k)
+        
+        else:
+            self.last_k_img = self.canny
+            self.last_k_pos = pos
+
         self.penalty = np.linalg.norm(pos-self.last_k_pos[-3:])
-        self.last_k_pos = np.concatenate((self.last_k_pos[3:], pos))
 
         #self.opt_dist = np.linalg.norm(self.pos - self.opt_pos, axis=1)
 
@@ -134,12 +157,7 @@ class SphereEnv(dm_env.Environment):
         else:
             self.reward = -self.k_t
 
-        canny = cv.Canny(img_gray, 40, 80)[...,None] * 1.
-        self.canny = canny
-                        
-        self.last_k_img = np.concatenate((self.last_k_img[1:], self.canny[None]), axis=0) # shape (k,img_size,img_size,1)
         self.observation = self.last_k_img.astype('float32')
-
         #self.observation = self.last_k_pos.astype('float32')
 
         self.observation_shape = self.observation.shape
@@ -179,23 +197,33 @@ class SphereEnv(dm_env.Environment):
         self.img = np.array(pil_img)
         img_gray = np.array(pil_img.convert('L'))
         self.img_gray = img_gray[...,None]
-        self.penalty = np.linalg.norm(pos - self.last_k_pos[-3:])
-        self.last_k_pos = np.concatenate((self.last_k_pos[3:], pos))
+        canny = cv.Canny(img_gray, 40, 80)[...,None] 
+        self.canny = canny
+
+        p = self.img_shape//32
+        flattened_img = np.array([np.mean(canny[32*i:32*(i+1), 32*j:32*(j+1)]) for i in range(p) for j in range (p)])
+                        
+        if self.last_k > 1:
+                        
+            self.last_k_img = np.stack([self.canny]*self.last_k, axis=0) # shape (k,img_size,img_size,1)
+            self.last_k_pos = np.concatenate([pos]*self.last_k)
+        
+        else:
+            self.last_k_img = self.canny
+            self.last_k_pos = pos
+
+        self.penalty = np.linalg.norm(pos-self.last_k_pos[-3:])
 
         #self.opt_dist = np.linalg.norm(self.pos - self.opt_pos, axis=1)
 
         self.total_reward += self.reward
         if self.reward > 0:
             self.reward -= self.k_d*self.penalty
+            self.reward = max(self.reward,0)
         else:
             self.reward = -self.k_t
 
-        canny = cv.Canny(img_gray, 40, 80)[...,None] * 1.
-        self.canny = canny
-                        
-        self.last_k_img = np.concatenate((self.last_k_img[1:], self.canny[None]), axis=0) # shape (k,img_size,img_size,1)
         self.observation = self.last_k_img.astype('float32')
-
         #self.observation = self.last_k_pos.astype('float32')
 
         self.observation_shape = self.observation.shape
