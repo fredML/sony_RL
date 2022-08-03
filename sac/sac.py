@@ -41,8 +41,8 @@ class SAC(OffPolicyActorCritic):
         lr_actor=3e-4,
         lr_critic=1e-4,
         lr_alpha=3e-4,
-        units_actor=(256, 256),
-        units_critic=(256, 256),
+        units_actor=(32, 32),
+        units_critic=(32, 32),
         log_std_min=-20.0,
         log_std_max=2.0,
         d2rl=False,
@@ -102,7 +102,7 @@ class SAC(OffPolicyActorCritic):
         actor_init, actor_apply = hk.without_apply_rng(hk.transform(fn_actor))
         self.actor_apply_jit = jax.jit(actor_apply)
 
-        dummy_state = np.random.uniform(0,1,(1,15))
+        dummy_state = np.random.uniform(0,1,state_space.shape)[None]
         dummy_action = np.random.uniform(-1,1,action_space.shape)[None]
 
         self.encoder = encoder
@@ -138,7 +138,7 @@ class SAC(OffPolicyActorCritic):
         state: np.ndarray,
     ) -> jnp.ndarray:
         if self.encoder is not None:
-            state = jnp.reshape(state, (-1, *state.shape[2:]))
+            state = jnp.reshape(state, (-1, *self.state_space.shape[1:]))
             vae_apply_jit, params_vae, bn_vae_state = self.encoder
             state, _ = vae_apply_jit(params_vae, bn_vae_state, state, False)
             state = state[1]
@@ -154,7 +154,7 @@ class SAC(OffPolicyActorCritic):
         key: jnp.ndarray,
     ) -> Tuple[jnp.ndarray, jnp.ndarray]:
         if self.encoder is not None:
-            state = jnp.reshape(state, (-1, *state.shape[2:]))
+            state = jnp.reshape(state, (-1, *self.state_space.shape[1:]))
             vae_apply_jit, params_vae, bn_vae_state = self.encoder
             state, _ = vae_apply_jit(params_vae, bn_vae_state, state, False)
             state = state[1]
@@ -169,13 +169,13 @@ class SAC(OffPolicyActorCritic):
 
         if self.encoder is not None:
 
-            state = jnp.reshape(state, (-1, *state.shape[2:])) #need to reshape from (bs, k, img_size, img_size, 1) to (bs*k,...)
-            next_state = jnp.reshape(next_state, (-1, *next_state.shape[2:]))
+            state = jnp.reshape(state, (-1, *self.state_space.shape[1:])) #need to reshape from (bs, k, img_size, img_size, 1) to (bs*k,...)
+            next_state = jnp.reshape(next_state, (-1, *self.state_space.shape[1:]))
             vae_apply_jit, params_vae, bn_vae_state = self.encoder
 
-            state, _ = jax.lax.stop_gradient(vae_apply_jit(params_vae, bn_vae_state, state, False)) #stop_gradient is useless
+            state, _ = vae_apply_jit(params_vae, bn_vae_state, state, False)
             state = state[1]
-            next_state, _ = jax.lax.stop_gradient(vae_apply_jit(params_vae, bn_vae_state, next_state, False))
+            next_state, _ = vae_apply_jit(params_vae, bn_vae_state, next_state, False)
             next_state = next_state[1]
 
             state = jnp.reshape(state, (self.batch_size, -1)) # output of vae is (bs*k, latent_dim), need to reshape (bs,k*latent_dim)
@@ -230,15 +230,15 @@ class SAC(OffPolicyActorCritic):
         self.params_critic_target = self._update_target(self.params_critic_target, self.params_critic)
 
         if writer and self.agent_step % 1000 == 0:
-            writer.add_scalar("episode/target_q", target.mean(), self.learning_step)
-            writer.add_scalar("episode/mean_q", q_val.mean(), self.learning_step)
-            writer.add_scalar("episode/done", done.mean(), self.learning_step)
-            writer.add_scalar("episode/reward", reward.mean(), self.learning_step)
-            writer.add_scalar("loss/critic", loss_critic, self.learning_step)
-            writer.add_scalar("loss/actor", loss_actor, self.learning_step)
-            writer.add_scalar("loss/alpha", loss_alpha, self.learning_step)
-            writer.add_scalar("stat/alpha", jnp.exp(self.log_alpha), self.learning_step)
-            writer.add_scalar("stat/entropy", -mean_log_pi, self.learning_step)
+            writer.add_scalar("episode/target_q", target.mean(), self.agent_step)
+            writer.add_scalar("episode/mean_q", q_val.mean(), self.agent_step)
+            writer.add_scalar("episode/done", done.mean(), self.agent_step)
+            writer.add_scalar("episode/reward", reward.mean(), self.agent_step)
+            writer.add_scalar("loss/critic", loss_critic, self.agent_step)
+            writer.add_scalar("loss/actor", loss_actor, self.agent_step)
+            writer.add_scalar("loss/alpha", loss_alpha, self.agent_step)
+            writer.add_scalar("stat/alpha", jnp.exp(self.log_alpha), self.agent_step)
+            writer.add_scalar("stat/entropy", -mean_log_pi, self.agent_step)
 
     @partial(jax.jit, static_argnums=0)
     def _sample_action(
@@ -248,7 +248,7 @@ class SAC(OffPolicyActorCritic):
         key: jnp.ndarray,
     ) -> Tuple[jnp.ndarray, jnp.ndarray]:
         if (self.encoder is not None) & (len(state.shape) > 2):
-            state = jnp.reshape(state, (-1, *state.shape[2:]))
+            state = jnp.reshape(state, (-1, *self.state_space.shape[1:]))
             vae_apply_jit, params_vae, bn_vae_state = self.encoder
             state = vae_apply_jit(params_vae, bn_vae_state, state, False)
             state = state[1]

@@ -52,8 +52,9 @@ class Encoder(hk.Module):
             s = DownBlock(filter_size)(s, is_training)
         s = hk.Flatten()(s)
         mu = hk.Linear(self.latent_dim)(s)
+        
         log_var = hk.Linear(self.latent_dim)(s)
-        return mu, log_var
+        return 0.1*mu, 0.1*log_var
 
 class Encoder_AE(hk.Module):
     def __init__(self, latent_dim, filter_sizes):
@@ -74,7 +75,7 @@ class Decoder(hk.Module):
         super().__init__()
         self.filter_sizes = filter_sizes
         self.last_conv_shape = last_conv_shape
-        self.n = last_conv_shape*last_conv_shape*filter_sizes[0] #can't use jnp prod in jit for some unknown reason
+        self.n = last_conv_shape*last_conv_shape*filter_sizes[0] #can't use jnp prod in jit for some reason
         self.output_channels = output_channels
         self.final_activation = final_activation
     
@@ -171,6 +172,35 @@ class ResNetVAE(hk.Module):
         recons = self.decoder(latent, encoder_bn_training)
 
         return recons, latent, mu, log_var
+
+## categorical VAE with gumbel trick
+class CatVAE(hk.Module): 
+
+    def __init__(self, input_size, latent_dim, num_classes, filter_sizes, output_channels, final_activation):
+        super().__init__()
+        self.latent_dim = latent_dim
+        self.num_classes = num_classes
+        self.encoder = Encoder_AE(latent_dim*num_classes, filter_sizes)
+        n = len(filter_sizes)
+        last_conv_shape = input_size//2**n
+        self.decoder = Decoder(last_conv_shape, filter_sizes[::-1], output_channels, final_activation)
+
+    def __call__(self, s, is_training, temperature):
+        latent, s = self.forward(s, is_training, temperature)
+        latent = latent.reshape(-1, self.latent_dim*self.num_classes)
+
+        recons = self.decoder(latent, is_training)
+
+        return recons, latent, s
+
+    def forward(self, s, is_training, temperature, eps=1e-7):
+        s = self.encoder(s, is_training)
+        s = s.reshape(-1, self.latent_dim, self.num_classes)
+        u = np.random.uniform(0, 1, s.shape)
+        g = -jnp.log(-jnp.log(u+eps)+eps)
+
+        latent = jax.nn.softmax((s+g)/temperature, axis=-1)
+        return latent, s
 
 def kl_gaussian(mean: jnp.ndarray, log_var: jnp.ndarray) -> jnp.ndarray:
 
