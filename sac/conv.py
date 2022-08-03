@@ -18,8 +18,6 @@ class DQNBody(hk.Module):
     def __call__(self, x):
         # He's initializer.
         w_init = hk.initializers.Orthogonal(scale=np.sqrt(2))
-        # Floatify the image.
-        x = x.astype(jnp.float32) / 255.0
         # Apply CNN.
         x = hk.Conv2D(32, kernel_shape=8, stride=4, padding="VALID", w_init=w_init)(x)
         x = nn.relu(x)

@@ -73,6 +73,7 @@ class ContinuousQFunction(hk.Module):
                 d2rl=self.d2rl,
             )(x)
 
+            x = jnp.tanh(x)
             return x
 
         
