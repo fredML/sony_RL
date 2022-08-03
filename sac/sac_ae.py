@@ -11,9 +11,9 @@ import optax
 from sac import SAC
 from critic import ContinuousQFunction
 from actor import StateDependentGaussianPolicy
-from misc import SACLinear
+#from misc import SACLinear
 #from conv import SACDecoder, SACEncoder
-from vae import Encoder, Decoder, kl_gaussian
+from vae import Encoder, Decoder, kl_gaussian, Encoder_AE
 from preprocess import preprocess_state
 from saving import load_params, save_params
 from optim import optimize, soft_update, weight_decay
@@ -43,21 +43,21 @@ class SAC_AE(SAC):
         fn_actor=None,
         fn_critic=None,
         lr_actor=1e-4,
-        lr_critic=1e-5,
-        lr_ae=1e-4,
+        lr_critic=1e-4,
+        lr_ae=1e-3,
         lr_alpha=1e-5,
-        units_actor=(32, 32),
-        units_critic=(32, 32),
+        units_actor=(32, 32, 32),
+        units_critic=(32, 32, 32),
         log_std_min=-10.0,
         log_std_max=2.0,
         d2rl=False,
         init_alpha=0.1,
         adam_b1_alpha=0.5,
-        feature_dim=10,
-        lambda_latent=1e-6,
-        lambda_weight=1e-7,
+        feature_dim=5,
+        lambda_latent=1e-8,
+        lambda_weight=1e-8,
         update_interval_actor=2,
-        update_interval_ae=10,
+        update_interval_ae=1e2,
         update_interval_target=2,
     ):
         '''assert len(state_space.shape) == 3 and state_space.shape[:2] == (84, 84)
@@ -117,7 +117,7 @@ class SAC_AE(SAC):
         self.var = var
         # Encoder.
         def encoder(s, is_training):
-            return Encoder(feature_dim, filter_sizes)(s, is_training)
+            return Encoder_AE(feature_dim, filter_sizes)(s, is_training)
 
         dummy = np.random.uniform(0,1,state_space.shape[1:])[None]
 
@@ -169,7 +169,7 @@ class SAC_AE(SAC):
         return np.array(action[0])
     
     @partial(jax.jit, static_argnums=[0,4])
-    def _preprocess( #can't jit because of reshape...
+    def _preprocess( 
         self,
         params_encoder: hk.Params,
         bn_enc,
@@ -178,10 +178,11 @@ class SAC_AE(SAC):
     ) -> jnp.ndarray:
         p = len(state)
         state = state.reshape(-1,*self.state_space.shape[1:])
-        conv, bn_enc = self.enc_apply_jit(params_encoder, bn_enc, state, is_training)
+        '''conv, bn_enc = self.enc_apply_jit(params_encoder, bn_enc, state, is_training)
         mu, log_var = conv
         sigma = jnp.exp(0.5*log_var)*is_training
-        latent = mu + np.random.normal(0, 1, size=sigma.shape)*sigma
+        latent = mu + np.random.normal(0, 1, size=sigma.shape)*sigma'''
+        latent, bn_enc = self.enc_apply_jit(params_encoder, bn_enc, state, is_training)
         latent = latent.reshape(p, -1)
         return latent, bn_enc
 
@@ -241,7 +242,7 @@ class SAC_AE(SAC):
 
         # Update autoencoder.
         if self.agent_step % self.update_interval_ae == 0:
-            self.opt_state_ae, params_ae, loss_ae, (self.bn_enc, self.bn_dec) = optimize(
+            self.opt_state_ae, params_ae, loss_ae, (losses, self.bn_enc, self.bn_dec) = optimize(
                 self._loss_ae,
                 self.opt_ae,
                 self.opt_state_ae,
@@ -262,16 +263,17 @@ class SAC_AE(SAC):
             self.params_critic_target = self._update_target(self.params_critic_target, self.params_critic)
 
         if writer and self.agent_step % 1000 == 0:
-            writer.add_scalar("episode/target_q", target.mean(), self.learning_step)
-            writer.add_scalar("episode/mean_q", q_val.mean(), self.learning_step)
-            writer.add_scalar("episode/done", done.mean(), self.learning_step)
-            writer.add_scalar("episode/reward", reward.mean(), self.learning_step)
-            writer.add_scalar("loss/critic", loss_critic, self.learning_step)
-            writer.add_scalar("loss/actor", loss_actor, self.learning_step)
-            writer.add_scalar("loss/ae", loss_ae, self.learning_step)
-            writer.add_scalar("loss/alpha", loss_alpha, self.learning_step)
-            writer.add_scalar("stat/alpha", jnp.exp(self.log_alpha), self.learning_step)
-            writer.add_scalar("stat/entropy", -mean_log_pi, self.learning_step)
+            writer.add_scalar("episode/target_q", target.mean(), self.agent_step)
+            writer.add_scalar("episode/mean_q", q_val.mean(), self.agent_step)
+            writer.add_scalar("episode/done", done.mean(), self.agent_step)
+            writer.add_scalar("episode/reward", reward.mean(), self.agent_step)
+            writer.add_scalar("loss/critic", loss_critic, self.agent_step)
+            writer.add_scalar("loss/actor", loss_actor, self.agent_step)
+            for name in losses.keys():
+                writer.add_scalar("loss/"+name, losses[name], self.agent_step)
+            writer.add_scalar("loss/alpha", loss_alpha, self.agent_step)
+            writer.add_scalar("stat/alpha", jnp.exp(self.log_alpha), self.agent_step)
+            writer.add_scalar("stat/entropy", -mean_log_pi, self.agent_step)
 
     @partial(jax.jit, static_argnums=0) # forced to rewrite this base function because we only need subset of params
     def _calculate_value_list(
@@ -355,12 +357,14 @@ class SAC_AE(SAC):
         #target = preprocess_state(state, key)
         # Reconstruct states.
         state = jnp.reshape(state, (-1, *self.state_space.shape[1:]))
-        conv, bn_enc = self.enc_apply_jit(params_ae['encoder'], bn_enc, state, True)
+        '''conv, bn_enc = self.enc_apply_jit(params_ae['encoder'], bn_enc, state, True)
         mu, log_var = conv
         sigma = jnp.exp(0.5*log_var)
         latent = mu + np.random.normal(0, 1, size=sigma.shape)*sigma
 
-        loss_latent = kl_gaussian(mu, log_var)
+        loss_latent = kl_gaussian(mu, log_var)'''
+        latent, bn_enc = self.enc_apply_jit(params_ae['encoder'], bn_enc, state, True)
+        loss_latent = 0.5 * jnp.square(latent).sum(axis=1).mean()
 
         reconst, bn_dec = self.dec_apply_jit(params_ae['decoder'], bn_dec, latent, True)
         # MSE for reconstruction errors.
@@ -369,7 +373,8 @@ class SAC_AE(SAC):
         # Weight decay for the decoder.
         #loss_weight = weight_decay(params_ae["decoder"])
         loss_weight = 0
-        return loss_reconst + self.lambda_latent * loss_latent + self.lambda_weight * loss_weight, (bn_enc, bn_dec)
+        losses = {'loss_reconst':loss_reconst, 'loss_latent':loss_latent, 'loss_weight':loss_weight}
+        return loss_reconst + self.lambda_latent * loss_latent + self.lambda_weight * loss_weight, (losses, bn_enc, bn_dec)
 
     @property
     def params_ae(self):

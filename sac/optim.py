@@ -76,4 +76,4 @@ def weight_decay(params: hk.Params) -> jnp.ndarray:
     Calculate the sum of L2 norms of parameters.
     """
     leaves, _ = tree_flatten(params)
-    return 0.5 * sum(jnp.vdot(x, x) for x in leaves)
+    return 0.5 * jnp.linalg.norm(jax.flatten_util.ravel_pytree(leaves)[0])**2
