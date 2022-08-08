@@ -8,7 +8,7 @@ import cv2 as cv
 
 class SphereEnv(dm_env.Environment):
 
-    def __init__(self, objects_path, img_shape, last_k = 3, voxel_weights=None, rmax=0.9, k_d=0, k_t=0):
+    def __init__(self, objects_path, img_shape, last_k = 3, voxel_weights=None, rmax=0.9, k_d=0, k_t=0, mode='train'):
 
         super(SphereEnv, self).__init__()
         self.objects_path = objects_path
@@ -40,6 +40,7 @@ class SphereEnv(dm_env.Environment):
         self.neigh_xyz = neigh_xyz
 
         self.last_k = last_k
+        self.mode = mode
 
     def reset(self, theta_init=-1, phi_init=-1) -> dm_env.TimeStep:
         self.num_steps = 0
@@ -73,6 +74,7 @@ class SphereEnv(dm_env.Environment):
         pos = self.spc.radius*angle_to_position_continuous(
             self.current_theta, self.current_phi)
         self.pos = pos
+        self.opt_dist = np.linalg.norm(self.pos - self.opt_pos, axis=1)
         img = self.spc.get_image_continuous(self.current_theta, self.current_phi)
         pil_img = Image.fromarray(img).resize((self.img_shape, self.img_shape))
         self.img = np.array(pil_img)
@@ -83,7 +85,7 @@ class SphereEnv(dm_env.Environment):
         self.canny = canny 
 
         p = self.img_shape//32
-        flattened_img = np.array([np.mean(canny[32*i:32*(i+1), 32*j:32*(j+1)]) for i in range(p) for j in range (p)])
+        #flattened_img = np.array([np.mean(canny[32*i:32*(i+1), 32*j:32*(j+1)]) for i in range(p) for j in range (p)])
 
         if self.last_k > 1:
                         
@@ -95,8 +97,8 @@ class SphereEnv(dm_env.Environment):
             self.last_k_pos = pos
 
         #self.observation = self.last_k_pos.astype('float32')
-        #self.opt_dist = np.linalg.norm(self.pos - self.opt_pos, axis=1)
         self.observation = self.last_k_img.astype('float32')
+        #self.observation = flattened_img
         self.observation_shape = self.observation.shape
 
         return dm_env.restart(self.observation)
@@ -120,11 +122,10 @@ class SphereEnv(dm_env.Environment):
 
         self.spc.continuous_carve(self.current_theta, self.current_phi)
 
-        self.reward = self.spc.gt_compare()
-
         pos = self.spc.radius*angle_to_position_continuous(
             self.current_theta, self.current_phi)
         self.pos = pos
+        self.opt_dist = np.linalg.norm(self.pos - self.opt_pos, axis=1)
         img = self.spc.img
         pil_img = Image.fromarray(img).resize((self.img_shape, self.img_shape))
         self.img = np.array(pil_img)
@@ -135,7 +136,7 @@ class SphereEnv(dm_env.Environment):
         self.canny = canny
 
         p = self.img_shape//32
-        flattened_img = np.array([np.mean(canny[32*i:32*(i+1), 32*j:32*(j+1)]) for i in range(p) for j in range (p)])
+        #flattened_img = np.array([np.mean(canny[32*i:32*(i+1), 32*j:32*(j+1)]) for i in range(p) for j in range (p)])
                         
         if self.last_k > 1:
                         
@@ -148,9 +149,11 @@ class SphereEnv(dm_env.Environment):
 
         self.penalty = np.linalg.norm(pos-self.last_k_pos[-3:])
 
-        #self.opt_dist = np.linalg.norm(self.pos - self.opt_pos, axis=1)
-
+        self.reward = self.spc.gt_compare()
         self.total_reward += self.reward
+
+        if self.mode == 'train':
+            self.reward += 0.05/(1+np.min(self.opt_dist))
         if self.reward > 0:
             self.reward -= self.k_d*self.penalty
             self.reward = max(self.reward,0)
@@ -159,6 +162,7 @@ class SphereEnv(dm_env.Environment):
 
         self.observation = self.last_k_img.astype('float32')
         #self.observation = self.last_k_pos.astype('float32')
+        #self.observation = flattened_img
 
         self.observation_shape = self.observation.shape
 
@@ -187,11 +191,10 @@ class SphereEnv(dm_env.Environment):
 
         self.spc.continuous_carve(self.current_theta, self.current_phi)
 
-        self.reward = self.spc.gt_compare()
-
         pos = self.spc.radius*angle_to_position_continuous(
             self.current_theta, self.current_phi)
         self.pos = pos
+        self.opt_dist = np.linalg.norm(self.pos - self.opt_pos, axis=1)
         img = self.spc.img
         pil_img = Image.fromarray(img).resize((self.img_shape, self.img_shape))
         self.img = np.array(pil_img)
@@ -201,7 +204,7 @@ class SphereEnv(dm_env.Environment):
         self.canny = canny
 
         p = self.img_shape//32
-        flattened_img = np.array([np.mean(canny[32*i:32*(i+1), 32*j:32*(j+1)]) for i in range(p) for j in range (p)])
+        #flattened_img = np.array([np.mean(canny[32*i:32*(i+1), 32*j:32*(j+1)]) for i in range(p) for j in range (p)])
                         
         if self.last_k > 1:
                         
@@ -214,9 +217,11 @@ class SphereEnv(dm_env.Environment):
 
         self.penalty = np.linalg.norm(pos-self.last_k_pos[-3:])
 
-        #self.opt_dist = np.linalg.norm(self.pos - self.opt_pos, axis=1)
-
+        self.reward = self.spc.gt_compare()
         self.total_reward += self.reward
+
+        if self.mode == 'train':
+            self.reward += 0.05/(1+np.min(self.opt_dist))
         if self.reward > 0:
             self.reward -= self.k_d*self.penalty
             self.reward = max(self.reward,0)
@@ -225,6 +230,7 @@ class SphereEnv(dm_env.Environment):
 
         self.observation = self.last_k_img.astype('float32')
         #self.observation = self.last_k_pos.astype('float32')
+        #self.observation = flattened_img
 
         self.observation_shape = self.observation.shape
 

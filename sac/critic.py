@@ -73,7 +73,7 @@ class ContinuousQFunction(hk.Module):
                 d2rl=self.d2rl,
             )(x)
 
-            x = jnp.tanh(x)
+            x = jnp.clip(x, -5, 5)
             return x
 
         
