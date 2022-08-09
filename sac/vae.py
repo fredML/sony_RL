@@ -42,12 +42,23 @@ class UpBlockNoBN(hk.Module):
         return s
 
 class Encoder(hk.Module):
-    def __init__(self, latent_dim, filter_sizes):
+    def __init__(self, latent_dim, filter_sizes, coord_conv=False):
         super().__init__()
         self.filter_sizes = filter_sizes
         self.latent_dim = latent_dim
+        self.coord_conv = coord_conv
     
     def __call__(self, s, is_training):
+        if self.coord_conv:
+            bs, h, w, _ = s.shape
+            i_channel = np.ones((bs,h,w))*np.arange(w)
+            i_channel = np.moveaxis(i_channel,1,2)[...,None]
+            j_channel = (np.ones((bs,h,w))*np.arange(h))[...,None]
+            i_channel = i_channel/(h-1)
+            i_channel = i_channel**2 - 1
+            j_channel = j_channel/(w-1)
+            j_channel = j_channel**2 - 1
+            s = jnp.concatenate((s, i_channel, j_channel), axis=-1)
         for filter_size in self.filter_sizes:
             s = DownBlock(filter_size)(s, is_training)
         s = hk.Flatten()(s)
@@ -57,12 +68,23 @@ class Encoder(hk.Module):
         return 0.1*mu, 0.1*log_var
 
 class Encoder_AE(hk.Module):
-    def __init__(self, latent_dim, filter_sizes):
+    def __init__(self, latent_dim, filter_sizes, coord_conv=False):
         super().__init__()
         self.filter_sizes = filter_sizes
         self.latent_dim = latent_dim
+        self.coord_conv = coord_conv
     
     def __call__(self, s, is_training):
+        if self.coord_conv:
+            bs, h, w, _ = s.shape
+            i_channel = np.ones((bs,h,w))*np.arange(w)
+            i_channel = np.moveaxis(i_channel,1,2)[...,None]
+            j_channel = (np.ones((bs,h,w))*np.arange(h))[...,None]
+            i_channel = i_channel/(h-1)
+            i_channel = i_channel**2 - 1
+            j_channel = j_channel/(w-1)
+            j_channel = j_channel**2 - 1
+            s = jnp.concatenate((s, i_channel, j_channel), axis=-1)
         for filter_size in self.filter_sizes:
             s = DownBlock(filter_size)(s, is_training)
         s = hk.Flatten()(s)
@@ -71,48 +93,70 @@ class Encoder_AE(hk.Module):
         return s
 
 class Decoder(hk.Module):
-    def __init__(self, last_conv_shape, filter_sizes, output_channels, final_activation):
+    def __init__(self, last_conv_shape, filter_sizes, output_channels, final_activation, coord_conv=False):
         super().__init__()
         self.filter_sizes = filter_sizes
         self.last_conv_shape = last_conv_shape
         self.n = last_conv_shape*last_conv_shape*filter_sizes[0] #can't use jnp prod in jit for some reason
         self.output_channels = output_channels
         self.final_activation = final_activation
+        self.coord_conv = coord_conv
     
     def __call__(self, s, is_training):
         s = jax.nn.leaky_relu(s, 0.01)
         s = hk.Linear(self.n)(s)
         s = s.reshape(-1, self.last_conv_shape, self.last_conv_shape, self.filter_sizes[0])
+        if self.coord_conv:
+            bs, h, w, _ = s.shape
+            i_channel = np.ones((bs,h,w))*np.arange(h)
+            i_channel = np.moveaxis(i_channel,1,2)[...,None]
+            j_channel = (np.ones((bs,h,w))*np.arange(w))[...,None]
+            i_channel = i_channel/(h-1)
+            i_channel = i_channel**2 - 1
+            j_channel = j_channel/(w-1)
+            j_channel = j_channel**2 - 1
+            s = jnp.concatenate((s, i_channel, j_channel), axis=-1)
         for filter_size in self.filter_sizes:
             s = UpBlock(filter_size)(s, is_training)
         s = hk.Conv2D(self.output_channels, kernel_shape=3, padding='SAME')(s)
         return self.final_activation(s)
 
 class DecoderNoBN(hk.Module):
-    def __init__(self, last_conv_shape, filter_sizes, output_channels, final_activation):
+    def __init__(self, last_conv_shape, filter_sizes, output_channels, final_activation, coord_conv=False):
         super().__init__()
         self.filter_sizes = filter_sizes
         self.last_conv_shape = last_conv_shape
         self.n = last_conv_shape*last_conv_shape*filter_sizes[0]
         self.output_channels = output_channels
         self.final_activation = final_activation
+        self.coord_conv = coord_conv
     
     def __call__(self, s, is_training): #is_training arg is used for compatibility
         s = jax.nn.leaky_relu(s, 0.01)
         s = hk.Linear(self.n)(s)
         s = s.reshape(-1, self.last_conv_shape, self.last_conv_shape, self.filter_sizes[0])
+        if self.coord_conv:
+            bs, h, w, _ = s.shape
+            i_channel = np.ones((bs,h,w))*np.arange(w)
+            i_channel = np.moveaxis(i_channel,1,2)[...,None]
+            j_channel = (np.ones((bs,h,w))*np.arange(h))[...,None]
+            i_channel = i_channel/(h-1)
+            i_channel = i_channel**2 - 1
+            j_channel = j_channel/(w-1)
+            j_channel = j_channel**2 - 1
+            s = jnp.concatenate((s, i_channel, j_channel), axis=-1)
         for filter_size in self.filter_sizes:
             s = UpBlockNoBN(filter_size)(s)
         s = hk.Conv2D(self.output_channels, kernel_shape=3, padding='SAME')(s)
         return self.final_activation(s)
 
 class AE(hk.Module):
-    def __init__(self, input_size, latent_dim, filter_sizes, output_channels, final_activation):
+    def __init__(self, input_size, latent_dim, filter_sizes, output_channels, final_activation, coord_conv=False):
         super().__init__()
-        self.encoder = Encoder_AE(latent_dim, filter_sizes)
+        self.encoder = Encoder_AE(latent_dim, filter_sizes, coord_conv)
         n = len(filter_sizes)
         last_conv_shape = input_size//2**n
-        self.decoder = Decoder(last_conv_shape, filter_sizes[::-1], output_channels, final_activation)
+        self.decoder = Decoder(last_conv_shape, filter_sizes[::-1], output_channels, final_activation, coord_conv)
 
     def __call__(self, s, is_training):
         latent = self.encoder(s, is_training)
@@ -123,12 +167,12 @@ class AE(hk.Module):
 
 class VAE(hk.Module): 
 
-    def __init__(self, input_size, latent_dim, filter_sizes, output_channels, final_activation):
+    def __init__(self, input_size, latent_dim, filter_sizes, output_channels, final_activation, coord_conv=False):
         super().__init__()
-        self.encoder = Encoder(latent_dim, filter_sizes)
+        self.encoder = Encoder(latent_dim, filter_sizes, coord_conv)
         n = len(filter_sizes)
         last_conv_shape = input_size//2**n
-        self.decoder = Decoder(last_conv_shape, filter_sizes[::-1], output_channels, final_activation)
+        self.decoder = Decoder(last_conv_shape, filter_sizes[::-1], output_channels, final_activation, coord_conv)
 
     def __call__(self, s, is_training):
         mu, log_var = self.encoder(s, is_training)
