@@ -103,21 +103,7 @@ class SphereEnv(dm_env.Environment):
 
         return dm_env.restart(self.observation)
 
-    def step(self, action) -> dm_env.TimeStep:
-        theta, phi = action
-        self.num_steps += 1
-        self.current_theta += theta
-        if self.current_theta > np.pi:
-            self.current_theta -= np.pi
-        elif self.current_theta < 0:
-            self.current_theta += np.pi
-
-        self.current_phi += phi
-        if self.current_phi >= 2*np.pi:
-            self.current_phi -= 2*np.pi
-        elif self.current_phi < 0:
-            self.current_phi += 2*np.pi
-
+    def _step(self):
         self.visited_positions.append([self.current_theta, self.current_phi])
 
         self.spc.continuous_carve(self.current_theta, self.current_phi)
@@ -170,6 +156,24 @@ class SphereEnv(dm_env.Environment):
             return dm_env.termination(reward=self.reward*1., observation=self.observation)
 
         return dm_env.transition(reward=self.reward*1., observation=self.observation)
+
+
+    def step(self, action) -> dm_env.TimeStep:
+        theta, phi = action
+        self.num_steps += 1
+        self.current_theta += theta
+        if self.current_theta > np.pi:
+            self.current_theta -= np.pi
+        elif self.current_theta < 0:
+            self.current_theta += np.pi
+
+        self.current_phi += phi
+        if self.current_phi >= 2*np.pi:
+            self.current_phi -= 2*np.pi
+        elif self.current_phi < 0:
+            self.current_phi += 2*np.pi
+
+        return self._step()
 
     def step_angle(self, theta, phi) -> dm_env.TimeStep:
 
@@ -187,57 +191,7 @@ class SphereEnv(dm_env.Environment):
         elif self.current_phi < 0:
             self.current_phi += 2*np.pi
 
-        self.visited_positions.append([self.current_theta, self.current_phi])
-
-        self.spc.continuous_carve(self.current_theta, self.current_phi)
-
-        pos = self.spc.radius*angle_to_position_continuous(
-            self.current_theta, self.current_phi)
-        self.pos = pos
-        self.opt_dist = np.linalg.norm(self.pos - self.opt_pos, axis=1)
-        img = self.spc.img
-        pil_img = Image.fromarray(img).resize((self.img_shape, self.img_shape))
-        self.img = np.array(pil_img)
-        img_gray = np.array(pil_img.convert('L'))
-        self.img_gray = img_gray[...,None]
-        canny = cv.Canny(img_gray, 40, 80)[...,None] 
-        self.canny = canny
-
-        p = self.img_shape//32
-        #flattened_img = np.array([np.mean(canny[32*i:32*(i+1), 32*j:32*(j+1)]) for i in range(p) for j in range (p)])
-                        
-        if self.last_k > 1:
-                        
-            self.last_k_img = np.stack([self.canny]*self.last_k, axis=0) # shape (k,img_size,img_size,1)
-            self.last_k_pos = np.concatenate([pos]*self.last_k)
-        
-        else:
-            self.last_k_img = self.canny
-            self.last_k_pos = pos
-
-        self.penalty = np.linalg.norm(pos-self.last_k_pos[-3:])
-
-        self.reward = self.spc.gt_compare()
-        self.total_reward += self.reward
-
-        if self.mode == 'train':
-            self.reward += 0.05/(1+np.min(self.opt_dist))
-        if self.reward > 0:
-            self.reward -= self.k_d*self.penalty
-            self.reward = max(self.reward,0)
-        else:
-            self.reward = -self.k_t
-
-        self.observation = self.last_k_img.astype('float32')
-        #self.observation = self.last_k_pos.astype('float32')
-        #self.observation = flattened_img
-
-        self.observation_shape = self.observation.shape
-
-        if self.total_reward > self.max_reward:
-            return dm_env.termination(reward=self.reward*1., observation=self.observation)
-
-        return dm_env.transition(reward=self.reward*1., observation=self.observation)
+        return self._step()
 
 
     def segmentation_mask(self):
@@ -270,8 +224,8 @@ class SphereEnv(dm_env.Environment):
         
         segmentation_mask = segmentation_mask.T
         pil_img = Image.fromarray(segmentation_mask).resize((self.img_shape, self.img_shape), PIL.Image.Resampling.NEAREST)
-        return np.array(pil_img)
 
+        return np.array(pil_img)
 
     def observation_spec(self) -> specs.BoundedArray:
         '''if (len(self.env_shape) == 3) & (self.apply_ae is None):
