@@ -2,6 +2,7 @@ import haiku as hk
 import jax
 import jax.numpy as jnp
 import numpy as np
+from PIL import Image, ImageDraw
 
 class DownBlock(hk.Module):
     def __init__(self, filter_size):
@@ -65,7 +66,7 @@ class Encoder(hk.Module):
         mu = hk.Linear(self.latent_dim)(s)
         
         log_var = hk.Linear(self.latent_dim)(s)
-        return 0.1*mu, 0.1*log_var
+        return mu, log_var
 
 class Encoder_AE(hk.Module):
     def __init__(self, latent_dim, filter_sizes, coord_conv=False):
@@ -160,7 +161,6 @@ class AE(hk.Module):
 
     def __call__(self, s, is_training):
         latent = self.encoder(s, is_training)
-
         recons = self.decoder(latent, is_training)
 
         return recons, latent, None, None
@@ -178,14 +178,9 @@ class VAE(hk.Module):
         mu, log_var = self.encoder(s, is_training)
         sigma = jnp.exp(0.5*log_var)*is_training
         latent = mu + np.random.normal(0, 1, size=sigma.shape)*sigma
-
         recons = self.decoder(latent, is_training)
 
         return recons, latent, mu, log_var
-
-    def encoder(self, s):
-        mu, log_var = self.encoder(s, False)
-        return mu
 
 class ResNetVAE(hk.Module):
     def __init__(self, latent_dim, filter_sizes, weights, pooling, output_channels, final_activation):
@@ -249,3 +244,38 @@ class CatVAE(hk.Module):
 def kl_gaussian(mean: jnp.ndarray, log_var: jnp.ndarray) -> jnp.ndarray:
 
   return 0.5 * jnp.sum(-log_var - 1.0 + jnp.exp(log_var) + jnp.square(mean), axis=-1).mean()
+
+def disantanglement_data(model, params, state, num_batches, batch_size, num_factors, h, w):
+    
+    def generate_img(h, w, x, y, r=5):
+        im = Image.new(mode='L',size=(h,w),color=0)
+        draw = ImageDraw.Draw(im)
+        draw.ellipse([x-r,y-r,x+r,y+r], outline=255)
+        draw.ellipse([64-40,64-55,64+40,64+55], outline=255) #the outer circle
+        return np.array(im)[...,None]
+
+    x = []
+    y = np.random.randint(0,num_factors,num_batches)
+
+    for n in range (num_batches):
+        K = y[n]
+        indep_factors_1 = np.random.randint(low=[40,30], high=[90,90], size=(batch_size,num_factors))
+        indep_factors_2 = np.random.randint(low=[40,30], high=[90,90], size=(batch_size,num_factors))
+
+        indep_factors_1[:,K] = indep_factors_2[:,K]
+        batch_1 = []
+        batch_2 = []
+        for i in range (batch_size):
+            im_1 = generate_img(h, w, indep_factors_1[i,0], indep_factors_1[i,1])[None]
+            batch_1.append(im_1)
+            im_2 = generate_img(h, w, indep_factors_2[i,0], indep_factors_2[i,1])[None]
+            batch_2.append(im_2)
+        batch_1 = np.concatenate(batch_1).astype('float32')
+        batch_2 = np.concatenate(batch_2).astype('float32')
+        _,_,z1,_ = model(params, state, batch_1, False)[0]
+        _,_,z2,_ = model(params, state, batch_2, False)[0]
+        z_diff = np.mean(np.abs(z1-z2),axis=0)
+        x.append(z_diff)
+
+    x = np.array(x)
+    return x, y
