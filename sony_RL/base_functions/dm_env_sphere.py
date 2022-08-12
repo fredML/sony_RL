@@ -2,7 +2,7 @@ import numpy as np
 from space_carving import *
 import dm_env
 from acme import specs
-from utils import angle_to_position_continuous
+from utils import angle_to_position_continuous, position_to_angle_continuous
 import PIL
 import cv2 as cv
 
@@ -41,6 +41,7 @@ class SphereEnv(dm_env.Environment):
 
         self.last_k = last_k
         self.mode = mode
+        self.max_T = 50
 
     def reset(self, theta_init=-1, phi_init=-1) -> dm_env.TimeStep:
         self.num_steps = 0
@@ -104,8 +105,8 @@ class SphereEnv(dm_env.Environment):
         return dm_env.restart(self.observation)
 
     def _step(self):
-        self.visited_positions.append([self.current_theta, self.current_phi])
 
+        self.visited_positions.append([self.current_theta, self.current_phi])
         self.spc.continuous_carve(self.current_theta, self.current_phi)
 
         pos = self.spc.radius*angle_to_position_continuous(
@@ -121,30 +122,30 @@ class SphereEnv(dm_env.Environment):
         canny = cv.Canny(img_gray, 40, 80)[...,None] 
         self.canny = canny
 
-        p = self.img_shape//32
+        #p = self.img_shape//32
         #flattened_img = np.array([np.mean(canny[32*i:32*(i+1), 32*j:32*(j+1)]) for i in range(p) for j in range (p)])
                         
         if self.last_k > 1:
                         
             self.last_k_img = np.stack([self.canny]*self.last_k, axis=0) # shape (k,img_size,img_size,1)
-            self.last_k_pos = np.concatenate([pos]*self.last_k)
+            self.last_k_pos = np.concatenate([self.pos]*self.last_k)
         
         else:
             self.last_k_img = self.canny
-            self.last_k_pos = pos
+            self.last_k_pos = self.pos
 
-        self.penalty = np.linalg.norm(pos-self.last_k_pos[-3:])
+        self.penalty = np.linalg.norm(self.pos-self.last_k_pos[-3:])
 
         self.reward = self.spc.gt_compare()
         self.total_reward += self.reward
 
         if self.mode == 'train':
             self.reward += 0.05/(1+np.min(self.opt_dist))
-        if self.reward > 0:
+            self.reward -= self.k_t
+
+        '''if self.reward > 0:
             self.reward -= self.k_d*self.penalty
-            self.reward = max(self.reward,0)
-        else:
-            self.reward = -self.k_t
+            self.reward = max(self.reward,0)'''
 
         self.observation = self.last_k_img.astype('float32')
         #self.observation = self.last_k_pos.astype('float32')
@@ -152,15 +153,15 @@ class SphereEnv(dm_env.Environment):
 
         self.observation_shape = self.observation.shape
 
-        if self.total_reward > self.max_reward:
+        if (self.total_reward > self.max_reward) or (self.num_steps>self.max_T):
             return dm_env.termination(reward=self.reward*1., observation=self.observation)
 
         return dm_env.transition(reward=self.reward*1., observation=self.observation)
 
 
     def step(self, action) -> dm_env.TimeStep:
-        theta, phi = action
         self.num_steps += 1
+        theta, phi = action
         self.current_theta += theta
         if self.current_theta > np.pi:
             self.current_theta -= np.pi
@@ -172,6 +173,9 @@ class SphereEnv(dm_env.Environment):
             self.current_phi -= 2*np.pi
         elif self.current_phi < 0:
             self.current_phi += 2*np.pi
+
+        '''self.pos += action
+        self.current_theta, self.current_phi = position_to_angle_continuous(*self.pos)'''
 
         return self._step()
 

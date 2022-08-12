@@ -102,7 +102,7 @@ class SAC(OffPolicyActorCritic):
         actor_init, actor_apply = hk.without_apply_rng(hk.transform(fn_actor))
         self.actor_apply_jit = jax.jit(actor_apply)
 
-        dummy_state = np.random.uniform(0,1,state_space.shape)[None]
+        dummy_state = np.random.uniform(0,1,15)[None]
         dummy_action = np.random.uniform(-1,1,action_space.shape)[None]
 
         self.encoder = encoder

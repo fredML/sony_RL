@@ -103,3 +103,6 @@ def angle_to_position_continuous(theta, phi):
     return np.array([np.cos(phi)*np.sin(theta),
                      np.sin(phi)*np.sin(theta),
                      np.cos(theta)])
+
+def position_to_angle_continuous(x,y,z):
+    return np.array([np.arccos(z),np.arctan2(y,x)])

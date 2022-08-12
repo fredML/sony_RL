@@ -63,7 +63,7 @@ class Trainer:
                 self.algo.update(self.writer)
 
             if step % self.eval_interval == 0:
-                self.evaluate(step)
+                self.evaluate(self.algo.agent_step)
             
             if step % self.save_interval == 0:
                 if self.save_params:
@@ -104,7 +104,7 @@ class Trainer:
         self.log["step"].append(step * self.action_repeat)
         self.log["return"].append(mean_return)
         self.log["num_steps"].append(mean_num_steps)
-        pd.DataFrame(self.log).to_csv(self.csv_path, index=False)
+        #pd.DataFrame(self.log).to_csv(self.csv_path, index=False)
 
         # Log to standard output.
         #print(f"Num steps: {step * self.action_repeat:<6}   Return: {mean_return:<5.1f}   Time: {self.time}")
