@@ -24,7 +24,7 @@ queue = cl.CommandQueue(ctx)
 mf = cl.mem_flags
 
 #prg_dir = os.path.join(os.path.dirname(__file__), 'kernels')
-prg_dir = '/mnt/diskSustainability/frederic/sony_RL/kernels'
+prg_dir = '/mnt/diskSustainability/frederic/sony_RL/sony_RL/kernels'
 eps = 1e-10
 
 with open(os.path.join(prg_dir, 'backprojection.c')) as f:
