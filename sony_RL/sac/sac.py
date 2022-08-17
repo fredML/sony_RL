@@ -38,13 +38,13 @@ class SAC(OffPolicyActorCritic):
         tau=5e-3,
         fn_actor=None,
         fn_critic=None,
-        lr_actor=3e-4,
-        lr_critic=1e-4,
+        lr_actor=1e-4,
+        lr_critic=5e-4,
         lr_alpha=3e-4,
-        units_actor=(32, 32),
-        units_critic=(32, 32),
+        units_actor=(400, 300),
+        units_critic=(400, 300),
         log_std_min=-20.0,
-        log_std_max=2.0,
+        log_std_max=1.0,
         d2rl=False,
         init_alpha=1.0,
         adam_b1_alpha=0.9,
@@ -109,7 +109,7 @@ class SAC(OffPolicyActorCritic):
         if encoder is not None:
             vae_apply_jit, params_vae, bn_vae_state = self.encoder
             dummy_state, _ = vae_apply_jit(params_vae, bn_vae_state, np.random.uniform(0,1,state_space.shape), False)
-            dummy_state = dummy_state[1]
+            dummy_state = dummy_state[2]
             dummy_state = dummy_state.reshape((1,-1))
 
         self.params_critic = self.params_critic_target = critic_init(next(self.rng), 
@@ -141,7 +141,7 @@ class SAC(OffPolicyActorCritic):
             state = jnp.reshape(state, (-1, *self.state_space.shape[1:]))
             vae_apply_jit, params_vae, bn_vae_state = self.encoder
             state, _ = vae_apply_jit(params_vae, bn_vae_state, state, False)
-            state = state[1]
+            state = state[2]
             state = jnp.reshape(state, (1, -1))
         mean, _ = self.actor_apply_jit(params_actor, state)
         return jnp.tanh(mean)
@@ -157,7 +157,7 @@ class SAC(OffPolicyActorCritic):
             state = jnp.reshape(state, (-1, *self.state_space.shape[1:]))
             vae_apply_jit, params_vae, bn_vae_state = self.encoder
             state, _ = vae_apply_jit(params_vae, bn_vae_state, state, False)
-            state = state[1]
+            state = state[2]
             state = jnp.reshape(state, (1, -1))
         mean, log_std = self.actor_apply_jit(params_actor, state)
         return reparameterize_gaussian_and_tanh(mean, log_std, key, False)
@@ -174,9 +174,9 @@ class SAC(OffPolicyActorCritic):
             vae_apply_jit, params_vae, bn_vae_state = self.encoder
 
             state, _ = vae_apply_jit(params_vae, bn_vae_state, state, False)
-            state = state[1]
+            state = state[2]
             next_state, _ = vae_apply_jit(params_vae, bn_vae_state, next_state, False)
-            next_state = next_state[1]
+            next_state = next_state[2]
 
             state = jnp.reshape(state, (self.batch_size, -1)) # output of vae is (bs*k, latent_dim), need to reshape (bs,k*latent_dim)
             next_state = jnp.reshape(next_state, (self.batch_size, -1))
@@ -251,7 +251,7 @@ class SAC(OffPolicyActorCritic):
             state = jnp.reshape(state, (-1, *self.state_space.shape[1:]))
             vae_apply_jit, params_vae, bn_vae_state = self.encoder
             state = vae_apply_jit(params_vae, bn_vae_state, state, False)
-            state = state[1]
+            state = state[2]
             state = jnp.reshape(state, (1, -1))
         mean, log_std = self.actor_apply_jit(params_actor, state)
         return reparameterize_gaussian_and_tanh(mean, log_std, key, True)
