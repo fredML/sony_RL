@@ -24,13 +24,14 @@ class DDPG(OffPolicyActorCritic):
         state_space,
         action_space,
         seed,
+        encoder=None,
         max_grad_norm=None,
         gamma=0.99,
         nstep=1,
         num_critics=1,
         buffer_size=10 ** 3,
         use_per=False,
-        batch_size=64,
+        batch_size=32,
         start_steps=10000,
         update_interval=1,
         tau=5e-3,
@@ -80,18 +81,32 @@ class DDPG(OffPolicyActorCritic):
                     hidden_units=units_actor,
                     d2rl=d2rl,
                 )(s)
+        
+        critic_init, critic_apply = hk.without_apply_rng(hk.transform(fn_critic))
+        self.critic_apply_jit = jax.jit(critic_apply)
+        actor_init, actor_apply = hk.without_apply_rng(hk.transform(fn_actor))
+        self.actor_apply_jit = jax.jit(actor_apply)
+
+        dummy_state = np.random.uniform(0,1,15)[None]
+        dummy_action = np.random.uniform(-1,1,action_space.shape)[None]
+
+        self.encoder = encoder
+        if encoder is not None:
+            vae_apply_jit, params_vae, bn_vae_state = self.encoder
+            dummy_state, _ = vae_apply_jit(params_vae, bn_vae_state, np.random.uniform(0,1,state_space.shape), False)
+            dummy_state = dummy_state[2]
+            dummy_state = dummy_state.reshape((1,-1))
 
         # Critic.
-        self.critic = hk.without_apply_rng(hk.transform(fn_critic))
-        self.params_critic = self.params_critic_target = self.critic.init(next(self.rng), np.random.uniform(-1,1,(1,9)),
-                                                                                          np.random.uniform(-1,1,(1,2)))
-        opt_init, self.opt_critic = optax.adam(lr_critic)
-        self.opt_state_critic = opt_init(self.params_critic)
+        self.params_critic = self.params_critic_target = critic_init(next(self.rng), 
+                                                                          dummy_state,
+                                                                          dummy_action)                                                                                
+        self.params_actor = actor_init(next(self.rng), dummy_state)
 
-        # Actor.
-        self.actor = hk.without_apply_rng(hk.transform(fn_actor))
-        self.params_actor = self.params_actor_target = self.actor.init(next(self.rng), np.random.uniform(-1,1,(1,9)))
-        opt_init, self.opt_actor = optax.adam(lr_actor)
+        opt_init, self.opt_critic = optax.radam(lr_critic)
+        self.opt_state_critic = opt_init(self.params_critic)
+        
+        opt_init, self.opt_actor = optax.radam(lr_actor)
         self.opt_state_actor = opt_init(self.params_actor)
 
         # Other parameters.
@@ -104,7 +119,13 @@ class DDPG(OffPolicyActorCritic):
         params_actor: hk.Params,
         state: np.ndarray,
     ) -> jnp.ndarray:
-        return self.actor.apply(params_actor, state)
+        if self.encoder is not None:
+            state = jnp.reshape(state, (-1, *self.state_space.shape[1:]))
+            vae_apply_jit, params_vae, bn_vae_state = self.encoder
+            state, _ = vae_apply_jit(params_vae, bn_vae_state, state, False)
+            state = state[2]
+            state = jnp.reshape(state, (1, -1))
+        return self.actor_apply_jit(params_actor, state)
 
     @partial(jax.jit, static_argnums=0)
     def _explore(
@@ -113,13 +134,33 @@ class DDPG(OffPolicyActorCritic):
         state: np.ndarray,
         key: jnp.ndarray,
     ) -> jnp.ndarray:
-        action = self.actor.apply(params_actor, state)
+        if self.encoder is not None:
+            state = jnp.reshape(state, (-1, *self.state_space.shape[1:]))
+            vae_apply_jit, params_vae, bn_vae_state = self.encoder
+            state, _ = vae_apply_jit(params_vae, bn_vae_state, state, False)
+            state = state[2]
+            state = jnp.reshape(state, (1, -1))
+        action = self.actor_apply_jit(params_actor, state)
         return add_noise(action, key, self.std, -1.0, 1.0)
 
     def update(self, writer=None):
         self.learning_step += 1
         weight, batch = self.buffer.sample(self.batch_size)
         state, action, reward, done, next_state = batch
+
+        if self.encoder is not None:
+
+            state = jnp.reshape(state, (-1, *self.state_space.shape[1:])) #need to reshape from (bs, k, img_size, img_size, 1) to (bs*k,...)
+            next_state = jnp.reshape(next_state, (-1, *self.state_space.shape[1:]))
+            vae_apply_jit, params_vae, bn_vae_state = self.encoder
+
+            state, _ = vae_apply_jit(params_vae, bn_vae_state, state, False)
+            state = state[2]
+            next_state, _ = vae_apply_jit(params_vae, bn_vae_state, next_state, False)
+            next_state = next_state[2]
+
+            state = jnp.reshape(state, (self.batch_size, -1)) # output of vae is (bs*k, latent_dim), need to reshape (bs,k*latent_dim)
+            next_state = jnp.reshape(next_state, (self.batch_size, -1))
 
         # Update critic and target.
         self.opt_state_critic, self.params_critic, loss_critic, (abs_td, target, q_val) = optimize(
@@ -145,7 +186,7 @@ class DDPG(OffPolicyActorCritic):
             self.buffer.update_priority(abs_td)
 
         # Update actor and target.
-        if self.learning_step % self.update_interval_policy == 0:
+        if self.agent_step % self.update_interval_policy == 0:
             self.opt_state_actor, self.params_actor, loss_actor, _ = optimize(
                 self._loss_actor,
                 self.opt_actor,
@@ -158,13 +199,13 @@ class DDPG(OffPolicyActorCritic):
             )
             self.params_actor_target = self._update_target(self.params_actor_target, self.params_actor)
 
-            if writer and self.learning_step % 1000 == 0:
-                writer.add_scalar("loss/critic", loss_critic, self.learning_step)
-                writer.add_scalar("loss/actor", loss_actor, self.learning_step)
-                writer.add_scalar("episode/target_q", target.mean(), self.learning_step)
-                writer.add_scalar("episode/mean_q", q_val.mean(), self.learning_step)
-                writer.add_scalar("episode/done", done.mean(), self.learning_step)
-                writer.add_scalar("episode/reward", reward.mean(), self.learning_step)
+            if writer and self.agent_step % 1000 == 0:
+                writer.add_scalar("loss/critic", loss_critic, self.agent_step)
+                writer.add_scalar("loss/actor", loss_actor, self.agent_step)
+                writer.add_scalar("episode/target_q", target.mean(), self.agent_step)
+                writer.add_scalar("episode/mean_q", q_val.mean(), self.agent_step)
+                writer.add_scalar("episode/done", done.mean(), self.agent_step)
+                writer.add_scalar("episode/reward", reward.mean(), self.agent_step)
 
     @partial(jax.jit, static_argnums=0)
     def _sample_action(
@@ -172,7 +213,13 @@ class DDPG(OffPolicyActorCritic):
         params_actor: hk.Params,
         state: np.ndarray,
     ) -> jnp.ndarray:
-        return self.actor.apply(params_actor, state)
+        if self.encoder is not None:
+            state = jnp.reshape(state, (-1, *self.state_space.shape[1:]))
+            vae_apply_jit, params_vae, bn_vae_state = self.encoder
+            state, _ = vae_apply_jit(params_vae, bn_vae_state, state, False)
+            state = state[2]
+            state = jnp.reshape(state, (1, -1))
+        return self.actor_apply_jit(params_actor, state)
 
     @partial(jax.jit, static_argnums=0)
     def _calculate_target(
@@ -215,6 +262,6 @@ class DDPG(OffPolicyActorCritic):
         params_critic: hk.Params,
         state: np.ndarray,
     ) -> jnp.ndarray:
-        action = self.actor.apply(params_actor, state)
-        mean_q = self.critic.apply(params_critic, state, action)[0].mean()
+        action = self.actor_apply_jit(params_actor, state)
+        mean_q = self.critic_apply_jit(params_critic, state, action)[0].mean()
         return -mean_q, None
