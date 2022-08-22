@@ -19,6 +19,7 @@ class TD3(DDPG):
         state_space,
         action_space,
         seed,
+        encoder=None,
         max_grad_norm=None,
         gamma=0.99,
         nstep=1,
@@ -49,6 +50,7 @@ class TD3(DDPG):
             state_space=state_space,
             action_space=action_space,
             seed=seed,
+            encoder=encoder,
             max_grad_norm=max_grad_norm,
             gamma=gamma,
             nstep=nstep,
@@ -71,6 +73,7 @@ class TD3(DDPG):
         )
         self.std_target = std_target
         self.clip_noise = clip_noise
+        self.encoder = encoder
 
     @partial(jax.jit, static_argnums=0)
     def _sample_action(
@@ -79,5 +82,11 @@ class TD3(DDPG):
         state: np.ndarray,
         key: jnp.ndarray,
     ) -> Tuple[jnp.ndarray, jnp.ndarray]:
+        if (self.encoder is not None) & (len(state.shape) > 2):
+            state = jnp.reshape(state, (-1, *self.state_space.shape[1:]))
+            vae_apply_jit, params_vae, bn_vae_state = self.encoder
+            state, _ = vae_apply_jit(params_vae, bn_vae_state, state, False)
+            state = state[2]
+            state = jnp.reshape(state, (1, -1))
         action = self.actor.apply(params_actor, state)
         return add_noise(action, key, self.std_target, -1.0, 1.0, -self.clip_noise, self.clip_noise)
