@@ -101,7 +101,7 @@ class DDPG(OffPolicyActorCritic):
         self.params_critic = self.params_critic_target = critic_init(next(self.rng), 
                                                                           dummy_state,
                                                                           dummy_action)                                                                                
-        self.params_actor = actor_init(next(self.rng), dummy_state)
+        self.params_actor = self.params_actor_target = actor_init(next(self.rng), dummy_state)
 
         opt_init, self.opt_critic = optax.radam(lr_critic)
         self.opt_state_critic = opt_init(self.params_critic)
@@ -213,7 +213,7 @@ class DDPG(OffPolicyActorCritic):
         params_actor: hk.Params,
         state: np.ndarray,
     ) -> jnp.ndarray:
-        if self.encoder is not None:
+        if (self.encoder is not None) & (len(state.shape) > 2):
             state = jnp.reshape(state, (-1, *self.state_space.shape[1:]))
             vae_apply_jit, params_vae, bn_vae_state = self.encoder
             state, _ = vae_apply_jit(params_vae, bn_vae_state, state, False)

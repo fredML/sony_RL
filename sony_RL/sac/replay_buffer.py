@@ -102,7 +102,7 @@ class ReplayBuffer:
                 state, action, reward = self.nstep_buffer.get()
                 self._append(state, action, reward, done, next_state)
 
-            if done or episode_done:
+            if done or episode_done: # no need to fill n_buffer if terminal state because no bootstrap required
                 while not self.nstep_buffer.is_empty():
                     state, action, reward = self.nstep_buffer.get()
                     self._append(state, action, reward, done, next_state)
