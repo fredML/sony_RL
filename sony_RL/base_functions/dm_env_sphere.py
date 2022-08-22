@@ -8,7 +8,7 @@ import cv2 as cv
 
 class SphereEnv(dm_env.Environment):
 
-    def __init__(self, objects_path, img_shape, last_k = 3, voxel_weights=None, rmax=0.9, k_d=0, k_t=0, mode='train'):
+    def __init__(self, objects_path, img_shape, last_k = 3, voxel_weights=None, rmax=0.9, k_d=0, k_t=0, mode='train', max_T=50):
 
         super(SphereEnv, self).__init__()
         self.objects_path = objects_path
@@ -41,7 +41,7 @@ class SphereEnv(dm_env.Environment):
 
         self.last_k = last_k
         self.mode = mode
-        self.max_T = 50
+        self.max_T = max_T
 
     def reset(self, theta_init=-1, phi_init=-1) -> dm_env.TimeStep:
         self.num_steps = 0
@@ -85,9 +85,6 @@ class SphereEnv(dm_env.Environment):
         canny = cv.Canny(img_gray, 40, 80)[...,None] 
         self.canny = canny 
 
-        p = self.img_shape//32
-        #flattened_img = np.array([np.mean(canny[32*i:32*(i+1), 32*j:32*(j+1)]) for i in range(p) for j in range (p)])
-
         if self.last_k > 1:
                         
             self.last_k_img = np.stack([self.canny]*self.last_k, axis=0) # shape (k,img_size,img_size,1)
@@ -99,7 +96,9 @@ class SphereEnv(dm_env.Environment):
 
         #self.observation = self.last_k_pos.astype('float32')
         self.observation = self.last_k_img.astype('float32')
-        #self.observation = flattened_img
+
+        #self.observation = np.concatenate((self.observation,np.tanh(self.max_T-self.num_steps)*np.ones_like(self.observation)),
+        #                                  axis=-1)
         self.observation_shape = self.observation.shape
 
         return dm_env.restart(self.observation)
@@ -121,9 +120,6 @@ class SphereEnv(dm_env.Environment):
 
         canny = cv.Canny(img_gray, 40, 80)[...,None] 
         self.canny = canny
-
-        #p = self.img_shape//32
-        #flattened_img = np.array([np.mean(canny[32*i:32*(i+1), 32*j:32*(j+1)]) for i in range(p) for j in range (p)])
                         
         if self.last_k > 1:
                         
@@ -134,8 +130,6 @@ class SphereEnv(dm_env.Environment):
             self.last_k_img = self.canny
             self.last_k_pos = self.pos
 
-        self.penalty = np.linalg.norm(self.pos-self.last_k_pos[-3:])
-
         self.reward = self.spc.gt_compare()
         self.total_reward += self.reward
 
@@ -144,17 +138,24 @@ class SphereEnv(dm_env.Environment):
             self.reward -= self.k_t
 
         '''if self.reward > 0:
+            self.penalty = np.linalg.norm(self.pos-self.last_k_pos[-3:])
             self.reward -= self.k_d*self.penalty
             self.reward = max(self.reward,0)'''
 
         self.observation = self.last_k_img.astype('float32')
         #self.observation = self.last_k_pos.astype('float32')
-        #self.observation = flattened_img
-
+        
+        #self.observation = np.concatenate((self.observation,np.tanh(self.max_T-self.num_steps)*np.ones_like(self.observation)),
+        #                                  axis=-1)
         self.observation_shape = self.observation.shape
 
-        if (self.total_reward > self.max_reward) or (self.num_steps>self.max_T):
+        if self.total_reward > self.max_reward:
             return dm_env.termination(reward=self.reward*1., observation=self.observation)
+
+        if self.num_steps > self.max_T: # for "non-environmental" time limits, it might be better to still bootstrap
+            ts = dm_env.transition(reward=self.reward*1., observation=self.observation)
+            self.reset()
+            return ts
 
         return dm_env.transition(reward=self.reward*1., observation=self.observation)
 
