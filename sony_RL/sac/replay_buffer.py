@@ -86,7 +86,7 @@ class ReplayBuffer:
             self.action = np.empty((buffer_size, 1), dtype=np.int32)
         else:
             NotImplementedError'''
-        self.action = np.empty((buffer_size, *action_space.shape), dtype=np.float32)
+        self.action = np.empty((buffer_size, len(action_space.shape)), dtype=np.float32)
         self.reward = np.empty((buffer_size, 1), dtype=np.float32)
         self.done = np.empty((buffer_size, 1), dtype=np.float32)
 

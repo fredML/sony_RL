@@ -144,7 +144,7 @@ class OffPolicyAlgorithm(BaseAlgorithm):
         self.episode_step += 1
 
         if self.agent_step <= self.start_steps:
-            action = jax.random.uniform(next(self.rng),(2,))
+            action = jax.random.randint(next(self.rng),(len(self.action_space.shape),), minval=0, maxval=len(self.action_space))
         else:
             action = self.explore(state)
 
