@@ -75,7 +75,7 @@ class space_carving_rotation_2d():
             self.total_phi_positions = total_phi_positions
 
             self.img_files = sorted (
-                glob.glob(os.path.join(model_path, 'imgs', '*.png')) )
+                glob.glob(os.path.join(model_path, 'imgs', '*.npy')) )
         
             self.masks_files = sorted(
                 glob.glob(os.path.join(model_path, 'masks', '*.npy')))
@@ -110,7 +110,7 @@ class space_carving_rotation_2d():
     
     def get_image(self, theta, phi):
         image_idx = (self.total_phi_positions * theta) + phi
-        img = Image.open(self.img_files[image_idx])
+        img = np.load(self.img_files[image_idx])
 
         return img
 

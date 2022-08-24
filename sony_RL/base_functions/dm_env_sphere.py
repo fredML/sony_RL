@@ -7,7 +7,7 @@ import cv2 as cv
 
 class SphereEnv(dm_env.Environment):
 
-    def __init__(self, objects_path, img_shape, continuous=True, last_k=3, voxel_weights=None, rmax=0.9, k_t=0, mode='eval', max_T=50):
+    def __init__(self, objects_path, img_shape, use_img=True, continuous=True, last_k=3, voxel_weights=None, rmax=0.9, k_t=0, mode='eval', max_T=50):
 
         super(SphereEnv, self).__init__()
         self.objects_path = objects_path
@@ -28,6 +28,7 @@ class SphereEnv(dm_env.Environment):
 
         self.last_k = last_k
         self.mode = mode
+        self.use_img = use_img
         self.max_T = max_T
 
         self.phi_n_positions = 180
@@ -76,33 +77,30 @@ class SphereEnv(dm_env.Environment):
         self.spc.reset()
 
         pos = np.where(self.continuous, self.spc.radius*angle_to_position_continuous(self.current_theta, self.current_phi),
-                                        self.spc.radius*angle_to_position_continuous(self.current_theta*np.pi/90,
-                                                                                     self.current_phi*np.pi/8))
+                                        self.spc.radius*angle_to_position_continuous((self.current_theta+1)*np.pi/8,
+                                                                                     self.current_phi*np.pi/90))
         self.pos = pos
-        if self.continuous:
-            img = self.spc.get_image_continuous(self.current_theta, self.current_phi)
-        else:
-            img = np.array(self.spc.get_image(self.current_theta, self.current_phi))[...,:3]
+        self.last_k_pos = np.concatenate([pos]*self.last_k)
 
-        pil_img = Image.fromarray(img).resize((self.img_shape, self.img_shape))
-        self.img = np.array(pil_img)
-        img_gray = np.array(pil_img.convert('L'))
-        self.img_gray = img_gray[...,None]
+        if self.use_img:
+            if self.continuous:
+                img = self.spc.get_image_continuous(self.current_theta, self.current_phi)
+            else:
+                img = self.spc.get_image(self.current_theta, self.current_phi)
 
-        canny = cv.Canny(img_gray, 40, 80)[...,None] 
-        self.canny = canny 
+            pil_img = Image.fromarray(img).resize((self.img_shape, self.img_shape))
+            self.img = np.array(pil_img)
+            img_gray = np.array(pil_img.convert('L'))
+            self.img_gray = img_gray[...,None]
 
-        if self.last_k > 1:
+            canny = cv.Canny(img_gray, 40, 80)[...,None] 
+            self.canny = canny 
                         
             self.last_k_img = np.stack([self.canny]*self.last_k, axis=0) # shape (k,img_size,img_size,1)
-            self.last_k_pos = np.concatenate([pos]*self.last_k)
+            self.observation = self.last_k_img.astype('float32')
         
         else:
-            self.last_k_img = self.canny
-            self.last_k_pos = pos
-
-        #self.observation = self.last_k_pos.astype('float32')
-        self.observation = self.last_k_img.astype('float32')
+            self.observation = self.last_k_pos.astype('float32')
 
         #self.observation = np.concatenate((self.observation,np.tanh(self.max_T-self.num_steps)*np.ones_like(self.observation)),
         #                                  axis=-1)
@@ -118,32 +116,6 @@ class SphereEnv(dm_env.Environment):
         else:
             self.spc.carve(self.current_theta, self.current_phi)
 
-        pos = np.where(self.continuous, self.spc.radius*angle_to_position_continuous(self.current_theta, self.current_phi),
-                                        self.spc.radius*angle_to_position_continuous(self.current_theta*np.pi/90,
-                                                                                     self.current_phi*np.pi/8))
-        self.pos = pos
-        if self.continuous:
-            img = self.spc.get_image_continuous(self.current_theta, self.current_phi)
-        else:
-            img = np.array(self.spc.get_image(self.current_theta, self.current_phi))[...,:3]
-
-        pil_img = Image.fromarray(img).resize((self.img_shape, self.img_shape))
-        self.img = np.array(pil_img)
-        img_gray = np.array(pil_img.convert('L'))
-        self.img_gray = img_gray[...,None]
-
-        canny = cv.Canny(img_gray, 40, 80)[...,None] 
-        self.canny = canny
-                        
-        if self.last_k > 1:
-                        
-            self.last_k_img = np.stack([self.canny]*self.last_k, axis=0) # shape (k,img_size,img_size,1)
-            self.last_k_pos = np.concatenate([self.pos]*self.last_k)
-        
-        else:
-            self.last_k_img = self.canny
-            self.last_k_pos = self.pos
-
         self.reward = self.spc.gt_compare()
         self.total_reward += self.reward
 
@@ -151,13 +123,36 @@ class SphereEnv(dm_env.Environment):
             self.opt_dist = np.linalg.norm(self.pos - self.opt_pos, axis=1)
             self.reward += 0.05/(1+np.min(self.opt_dist))
             self.reward -= self.k_t
-
-        self.observation = self.last_k_img.astype('float32')
-        #self.observation = self.last_k_pos.astype('float32')
         
         #self.observation = np.concatenate((self.observation,np.tanh(self.max_T-self.num_steps)*np.ones_like(self.observation)),
         #                                  axis=-1)
         self.observation_shape = self.observation.shape
+
+        pos = np.where(self.continuous, self.spc.radius*angle_to_position_continuous(self.current_theta, self.current_phi),
+                                        self.spc.radius*angle_to_position_continuous((self.current_theta+1)*np.pi/8,
+                                                                                     self.current_phi*np.pi/90))
+        self.pos = pos
+        self.last_k_pos = np.concatenate((self.last_k_pos[3:],pos))
+
+        if self.use_img:
+            if self.continuous:
+                img = self.spc.get_image_continuous(self.current_theta, self.current_phi)
+            else:
+                img = self.spc.get_image(self.current_theta, self.current_phi)
+
+            pil_img = Image.fromarray(img).resize((self.img_shape, self.img_shape))
+            self.img = np.array(pil_img)
+            img_gray = np.array(pil_img.convert('L'))
+            self.img_gray = img_gray[...,None]
+
+            canny = cv.Canny(img_gray, 40, 80)[...,None] 
+            self.canny = canny
+                                                    
+            self.last_k_img = np.concatenate((self.last_k_img[1:], canny[None]), axis=0)
+            self.observation = self.last_k_img.astype('float32')
+        
+        else:
+            self.observation = self.last_k_pos.astype('float32')
 
         if self.total_reward > self.max_reward:
             return dm_env.termination(reward=self.reward*1., observation=self.observation)
