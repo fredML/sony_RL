@@ -88,5 +88,5 @@ class TD3(DDPG):
             state, _ = vae_apply_jit(params_vae, bn_vae_state, state, False)
             state = state[2]
             state = jnp.reshape(state, (1, -1))
-        action = self.actor.apply(params_actor, state)
+        action = self.actor_apply_jit(params_actor, state)
         return add_noise(action, key, self.std_target, -1.0, 1.0, -self.clip_noise, self.clip_noise)
