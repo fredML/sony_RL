@@ -123,7 +123,7 @@ class DiscreteQFunction(hk.Module):
         self,
         action_space,
         num_critics=1,
-        hidden_units=(512,),
+        hidden_units=(256,256),
         dueling_net=False,
     ):
         super(DiscreteQFunction, self).__init__()
@@ -137,10 +137,10 @@ class DiscreteQFunction(hk.Module):
             if len(x.shape) == 4:
                 x = DQNBody()(x)
             output = MLP(
-                self.action_space.n,
+                len(self.action_space),
                 self.hidden_units,
                 hidden_activation=nn.relu,
-                hidden_scale=np.sqrt(2),
+                hidden_scale=1,
             )(x)
             if self.dueling_net:
                 baseline = MLP(
