@@ -15,22 +15,16 @@ def chamfer_d(tree1, pc_1, pc_2):
     d_12 = np.mean(ds)
     return d_21 + d_12
 
-def get_mask(img):
-    res = np.array(img)[:, :, :3]
-    mask1 = np.all((res == [70, 70, 70]), axis=-1)
-    mask2 = np.all((res == [71, 71, 71]), axis=-1)
-    mask3 = np.all((res == [72, 72, 72]), axis=-1)
-    mask12 = mask1 | mask2
-    mask_inv = mask12 | mask3
-    mask = 1 - mask_inv
-    return 255*mask
+def get_mask_background(img, pixels):
+    mask = np.zeros_like(img[...,0])
+    for pixel in pixels:
+        a = img[...,0]==pixel
+        b = img[...,1]==pixel
+        c = img[...,2]==pixel
 
-def get_mask_black(img):
-    a = img[...,0]==0
-    b = img[...,1]==0
-    c = img[...,2]==0
-
-    mask = 1 - (a&b&c)*1
+        temp = (a&b&c)*1
+        mask = mask | temp
+    mask = 1-mask
     return 255*mask
 
 def get_frame(img):

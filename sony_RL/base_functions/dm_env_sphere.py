@@ -3,21 +3,20 @@ from space_carving import *
 import dm_env
 from acme import specs
 from utils import angle_to_position_continuous, position_to_angle_continuous
-import PIL
 import cv2 as cv
 
 class SphereEnv(dm_env.Environment):
 
-    def __init__(self, objects_path, img_shape, last_k = 3, voxel_weights=None, rmax=0.9, k_d=0, k_t=0, mode='train', max_T=50):
+    def __init__(self, objects_path, img_shape, continuous=True, last_k=3, voxel_weights=None, rmax=0.9, k_t=0, mode='train', max_T=50):
 
         super(SphereEnv, self).__init__()
         self.objects_path = objects_path
         self.voxel_weights = voxel_weights
+        self.continuous = continuous
         self.spc = space_carving_rotation_2d(self.objects_path,
                                              voxel_weights=self.voxel_weights,
-                                             continuous=True)
+                                             continuous=self.continuous)
         self.max_reward = rmax
-        self.k_d = k_d #penalty based on distance between two camera positions
         self.k_t = k_t #penalty based on number of views
 
         self.sphere_radius = 5
@@ -27,21 +26,19 @@ class SphereEnv(dm_env.Environment):
 
         self.img_shape = img_shape # for reshaping images
 
-        neigh_xyz = []
-        dtheta = 6*np.pi/180
-        dphi = 6*np.pi/180
-        for i in range(len(self.opt_theta)):
-            theta, phi = self.opt_theta[i], self.opt_phi[i]
-            for val_theta in np.linspace(theta-dtheta,theta+dtheta,50):
-                for val_phi in np.linspace(phi-dphi,phi+dphi,50):
-                    neigh_xyz.append(self.sphere_radius*angle_to_position_continuous(val_theta, val_phi))
-        
-        neigh_xyz = np.array(neigh_xyz)
-        self.neigh_xyz = neigh_xyz
-
         self.last_k = last_k
         self.mode = mode
         self.max_T = max_T
+
+        self.phi_n_positions = 180
+        self.theta_n_positions = 4
+
+        self.actions = {}
+        compt = 0
+        for k in range (4):
+            for j in range (-15, 20, 5):
+                self.actions[compt] = (k, j)
+                compt += 1
 
     def reset(self, theta_init=-1, phi_init=-1) -> dm_env.TimeStep:
         self.num_steps = 0
@@ -55,13 +52,19 @@ class SphereEnv(dm_env.Environment):
         self.init_theta = theta_init
 
         if self.init_phi == -1:
-            self.init_phi = np.random.uniform(0, 2*np.pi)
+            if self.continuous:
+                self.init_phi = np.random.uniform(0, 2*np.pi)
+            else:
+                self.init_phi = np.random.randint(0, self.phi_n_positions)
             self.current_phi = self.init_phi
         else:
             self.current_phi = self.init_phi
 
         if self.init_theta == -1:
-            self.init_theta = np.random.uniform(0, np.pi/2)
+            if self.continuous:
+                self.init_theta = np.random.uniform(0, np.pi/2)
+            else:
+                self.init_theta = np.random.randint(0, self.theta_n_positions)
             self.current_theta = self.init_theta
         else:
             self.current_theta = self.init_theta
@@ -75,8 +78,10 @@ class SphereEnv(dm_env.Environment):
         pos = self.spc.radius*angle_to_position_continuous(
             self.current_theta, self.current_phi)
         self.pos = pos
-        self.opt_dist = np.linalg.norm(self.pos - self.opt_pos, axis=1)
-        img = self.spc.get_image_continuous(self.current_theta, self.current_phi)
+        if self.continuous:
+            img = self.spc.get_image_continuous(self.current_theta, self.current_phi)
+        else:
+            img = np.array(self.spc.get_image(self.current_theta, self.current_phi))[...,:3]
         pil_img = Image.fromarray(img).resize((self.img_shape, self.img_shape))
         self.img = np.array(pil_img)
         img_gray = np.array(pil_img.convert('L'))
@@ -106,13 +111,18 @@ class SphereEnv(dm_env.Environment):
     def _step(self):
 
         self.visited_positions.append([self.current_theta, self.current_phi])
-        self.spc.continuous_carve(self.current_theta, self.current_phi)
+        if self.continuous:
+            self.spc.continuous_carve(self.current_theta, self.current_phi)
+        else:
+            self.spc.carve(self.current_theta, self.current_phi)
 
         pos = self.spc.radius*angle_to_position_continuous(
             self.current_theta, self.current_phi)
         self.pos = pos
-        self.opt_dist = np.linalg.norm(self.pos - self.opt_pos, axis=1)
-        img = self.spc.img
+        if self.continuous:
+            img = self.spc.get_image_continuous(self.current_theta, self.current_phi)
+        else:
+            img = np.array(self.spc.get_image(self.current_theta, self.current_phi))[...,:3]
         pil_img = Image.fromarray(img).resize((self.img_shape, self.img_shape))
         self.img = np.array(pil_img)
         img_gray = np.array(pil_img.convert('L'))
@@ -134,13 +144,9 @@ class SphereEnv(dm_env.Environment):
         self.total_reward += self.reward
 
         if self.mode == 'train':
+            self.opt_dist = np.linalg.norm(self.pos - self.opt_pos, axis=1)
             self.reward += 0.05/(1+np.min(self.opt_dist))
             self.reward -= self.k_t
-
-        '''if self.reward > 0:
-            self.penalty = np.linalg.norm(self.pos-self.last_k_pos[-3:])
-            self.reward -= self.k_d*self.penalty
-            self.reward = max(self.reward,0)'''
 
         self.observation = self.last_k_img.astype('float32')
         #self.observation = self.last_k_pos.astype('float32')
@@ -162,21 +168,15 @@ class SphereEnv(dm_env.Environment):
 
     def step(self, action) -> dm_env.TimeStep:
         self.num_steps += 1
-        theta, phi = action
-        self.current_theta += theta
-        if self.current_theta > np.pi:
-            self.current_theta -= np.pi
-        elif self.current_theta < 0:
-            self.current_theta += np.pi
-
-        self.current_phi += phi
-        if self.current_phi >= 2*np.pi:
-            self.current_phi -= 2*np.pi
-        elif self.current_phi < 0:
-            self.current_phi += 2*np.pi
-
-        '''self.pos += action
-        self.current_theta, self.current_phi = position_to_angle_continuous(*self.pos)'''
+        if self.continuous:
+            theta, phi = action
+            self.current_theta = self.calculate_angle(self.current_theta, np.pi, theta)
+            self.current_phi = self.calculate_angle(self.current_phi, 2*np.pi, phi)
+        else:
+            action = action.item()
+            theta = self.actions[action][0]
+            phi = self.actions[action][1]
+            self.current_phi = self.calculate_angle(self.current_theta, self.phi_n_positions, phi)
 
         return self._step()
 
@@ -186,20 +186,29 @@ class SphereEnv(dm_env.Environment):
         self.current_theta = theta
         self.current_phi = phi
 
-        if self.current_theta > np.pi/2:
-            self.current_theta -= np.pi/2
-        elif self.current_theta < 0:
-            self.current_theta += np.pi/2
-
-        if self.current_phi >= 2*np.pi:
-            self.current_phi -= 2*np.pi
-        elif self.current_phi < 0:
-            self.current_phi += 2*np.pi
-
         return self._step()
 
+    def calculate_angle(self, curr_angle, max_angle, steps):
+        n_pos = curr_angle + steps
+        if n_pos >= max_angle:
+            n_pos -= max_angle
+        elif n_pos < 0:
+            n_pos += max_angle
+        return n_pos
 
-    def segmentation_mask(self):
+    '''def segmentation_mask(self):
+
+        neigh_xyz = []
+        dtheta = 6*np.pi/180
+        dphi = 6*np.pi/180
+        for i in range(len(self.opt_theta)):
+            theta, phi = self.opt_theta[i], self.opt_phi[i]
+            for val_theta in np.linspace(theta-dtheta,theta+dtheta,50):
+                for val_phi in np.linspace(phi-dphi,phi+dphi,50):
+                    neigh_xyz.append(self.sphere_radius*angle_to_position_continuous(val_theta, val_phi))
+        
+        neigh_xyz = np.array(neigh_xyz)
+        self.neigh_xyz = neigh_xyz
 
         segmentation_mask = np.zeros((1024,768))
 
@@ -230,7 +239,7 @@ class SphereEnv(dm_env.Environment):
         segmentation_mask = segmentation_mask.T
         pil_img = Image.fromarray(segmentation_mask).resize((self.img_shape, self.img_shape), PIL.Image.Resampling.NEAREST)
 
-        return np.array(pil_img)
+        return np.array(pil_img)'''
 
     def observation_spec(self) -> specs.BoundedArray:
         '''if (len(self.env_shape) == 3) & (self.apply_ae is None):

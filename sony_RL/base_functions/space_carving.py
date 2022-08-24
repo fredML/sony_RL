@@ -1,13 +1,10 @@
-import cv2
 import numpy as np
-from skimage.morphology import binary_dilation
-from skimage.transform import resize
 import json
 from PIL import Image
 import glob
 import os
 from copy import deepcopy
-from utils import angle_to_position_continuous, get_mask_black, set_sc, make_extrinsics
+from utils import angle_to_position_continuous, get_mask_background, set_sc, make_extrinsics
 
 path = os.getcwd()
 os.chdir('/mnt/diskSustainability/frederic/rlviewer')
@@ -16,7 +13,7 @@ import rlviewer
 os.chdir(path)
 
 class space_carving_rotation_2d():
-    def __init__(self, model_path, total_phi_positions=None, voxel_weights=None, n_holes=3, continuous=True):
+    def __init__(self, model_path, total_phi_positions=180, voxel_weights=None, n_holes=3, continuous=True):
 
         self.camera_model = json.load(
                 open(os.path.join(model_path, 'camera_model.json')))
@@ -81,7 +78,7 @@ class space_carving_rotation_2d():
                 glob.glob(os.path.join(model_path, 'imgs', '*.png')) )
         
             self.masks_files = sorted(
-                glob.glob(os.path.join(model_path, 'masks', '*.png')))
+                glob.glob(os.path.join(model_path, 'masks', '*.npy')))
 
             self.gt_files = sorted(
                 glob.glob(os.path.join(model_path, 'ground_truth_volumes', '*.npy')))
@@ -107,19 +104,15 @@ class space_carving_rotation_2d():
         return ext
 
     def load_mask(self, idx):
-        mask = cv2.imread(self.masks_files[idx], cv2.IMREAD_GRAYSCALE)
-        self.mask = mask
+        #mask = cv2.imread(self.masks_files[idx], cv2.IMREAD_GRAYSCALE)
+        mask = np.load(self.masks_files[idx])
         return mask
     
     def get_image(self, theta, phi):
         image_idx = (self.total_phi_positions * theta) + phi
         img = Image.open(self.img_files[image_idx])
-        cp = img.copy()
-        cp = cp.resize((256,256))
-        #img = ImageOps.grayscale(img)
-        img.close()
 
-        return cp
+        return img
 
     def get_image_continuous(self, theta, phi):
         img = rlviewer.grab(self.radius, np.pi/2 - theta, phi) 
@@ -134,6 +127,7 @@ class space_carving_rotation_2d():
    
         idx = (self.total_phi_positions * theta) + phi
         mask = self.load_mask(idx)
+        self.mask = mask
         self.space_carve(mask, self.extrinsics[idx])
 
         volume = self.sc.values()
@@ -144,7 +138,7 @@ class space_carving_rotation_2d():
         assert self.continuous, "continuous settings only"
         img = self.get_image_continuous(theta, phi)
         self.img = img
-        mask = get_mask_black(img)
+        mask = get_mask_background(img, [0])
         self.mask = mask
         self.space_carve(mask, self.extrinsics)
 
@@ -155,8 +149,8 @@ class space_carving_rotation_2d():
     def space_carve(self, mask, rt):
         '''do space carving on mask with preset parameters'''
         #rot = sum(rt['R'], [])
-        rot = np.ndarray.flatten(rt['R'])
-        tvec = rt['T']
+        rot = np.ndarray.flatten(np.array(rt['R']))
+        tvec = np.array(rt['T'])
         '''if self.n_dilation:
             for _ in range(self.n_dilation):
                 mask = binary_dilation(mask)'''
