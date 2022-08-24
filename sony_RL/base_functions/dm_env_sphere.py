@@ -7,7 +7,7 @@ import cv2 as cv
 
 class SphereEnv(dm_env.Environment):
 
-    def __init__(self, objects_path, img_shape, continuous=True, last_k=3, voxel_weights=None, rmax=0.9, k_t=0, mode='train', max_T=50):
+    def __init__(self, objects_path, img_shape, continuous=True, last_k=3, voxel_weights=None, rmax=0.9, k_t=0, mode='eval', max_T=50):
 
         super(SphereEnv, self).__init__()
         self.objects_path = objects_path
@@ -75,13 +75,15 @@ class SphereEnv(dm_env.Environment):
         # create space carving objects
         self.spc.reset()
 
-        pos = self.spc.radius*angle_to_position_continuous(
-            self.current_theta, self.current_phi)
+        pos = np.where(self.continuous, self.spc.radius*angle_to_position_continuous(self.current_theta, self.current_phi),
+                                        self.spc.radius*angle_to_position_continuous(self.current_theta*np.pi/90,
+                                                                                     self.current_phi*np.pi/8))
         self.pos = pos
         if self.continuous:
             img = self.spc.get_image_continuous(self.current_theta, self.current_phi)
         else:
             img = np.array(self.spc.get_image(self.current_theta, self.current_phi))[...,:3]
+
         pil_img = Image.fromarray(img).resize((self.img_shape, self.img_shape))
         self.img = np.array(pil_img)
         img_gray = np.array(pil_img.convert('L'))
@@ -116,13 +118,15 @@ class SphereEnv(dm_env.Environment):
         else:
             self.spc.carve(self.current_theta, self.current_phi)
 
-        pos = self.spc.radius*angle_to_position_continuous(
-            self.current_theta, self.current_phi)
+        pos = np.where(self.continuous, self.spc.radius*angle_to_position_continuous(self.current_theta, self.current_phi),
+                                        self.spc.radius*angle_to_position_continuous(self.current_theta*np.pi/90,
+                                                                                     self.current_phi*np.pi/8))
         self.pos = pos
         if self.continuous:
             img = self.spc.get_image_continuous(self.current_theta, self.current_phi)
         else:
             img = np.array(self.spc.get_image(self.current_theta, self.current_phi))[...,:3]
+
         pil_img = Image.fromarray(img).resize((self.img_shape, self.img_shape))
         self.img = np.array(pil_img)
         img_gray = np.array(pil_img.convert('L'))
@@ -174,9 +178,9 @@ class SphereEnv(dm_env.Environment):
             self.current_phi = self.calculate_angle(self.current_phi, 2*np.pi, phi)
         else:
             action = action.item()
-            theta = self.actions[action][0]
-            phi = self.actions[action][1]
-            self.current_phi = self.calculate_angle(self.current_theta, self.phi_n_positions, phi)
+            theta, phi = self.actions[action]
+            self.current_theta = theta
+            self.current_phi = self.calculate_angle(self.current_phi, self.phi_n_positions, phi)
 
         return self._step()
 
