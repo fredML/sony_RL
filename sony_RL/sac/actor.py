@@ -24,7 +24,7 @@ class DeterministicPolicy(hk.Module):
 
     def __call__(self, x):
         return MLP(
-            self.action_space.shape[0],
+            len(self.action_space.shape),
             self.hidden_units,
             hidden_activation=nn.relu,
             output_activation=jnp.tanh,
@@ -59,7 +59,7 @@ class StateDependentGaussianPolicy(hk.Module):
         if len(x.shape)==4:
             x = DQNBody()(x)
         x = MLP(
-            2 * self.action_space.shape[0],
+            2 * len(self.action_space.shape),
             self.hidden_units,
             hidden_activation=nn.relu,
             output_scale=0.01,

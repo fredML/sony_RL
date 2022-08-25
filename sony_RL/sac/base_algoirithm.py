@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 from functools import partial
 
 import jax
+import jax.numpy as jnp
 from haiku import PRNGSequence
 
 from replay_buffer import ReplayBuffer, PrioritizedReplayBuffer, RolloutBuffer
@@ -144,7 +145,7 @@ class OffPolicyAlgorithm(BaseAlgorithm):
         self.episode_step += 1
 
         if self.agent_step <= self.start_steps:
-            action = jax.random.randint(next(self.rng),(len(self.action_space.shape),), minval=0, maxval=len(self.action_space))
+            action = jax.random.uniform(next(self.rng),(len(self.action_space.shape),), minval=-jnp.pi/4, maxval=jnp.pi/4)
         else:
             action = self.explore(state)
 

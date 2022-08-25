@@ -76,6 +76,7 @@ class DQN(QLearning):
             net_init, net_apply = hk.without_apply_rng(hk.transform(fn))
             self.net_apply = jax.jit(net_apply)
             self.encoder = encoder
+            dummy_state = np.random.uniform(0, 1, state_space.shape)[None]
             if encoder is not None:
                 vae_apply_jit, params_vae, bn_vae_state = self.encoder
                 dummy_state, _ = vae_apply_jit(params_vae, bn_vae_state, np.random.uniform(0,1,state_space.shape), False)

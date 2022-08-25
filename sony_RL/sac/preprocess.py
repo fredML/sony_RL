@@ -10,8 +10,8 @@ def add_noise(
     std: float,
     out_min: float = -np.inf,
     out_max: float = np.inf,
-    noise_min: float = -np.inf,
-    noise_max: float = np.inf,
+    noise_min: float = -1,
+    noise_max: float = 1,
 ) -> jnp.ndarray:
     """
     Add noise to actions.

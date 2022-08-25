@@ -7,13 +7,14 @@ import cv2 as cv
 
 class SphereEnv(dm_env.Environment):
 
-    def __init__(self, objects_path, img_shape, use_img=True, continuous=True, last_k=3, voxel_weights=None, rmax=0.9, k_t=0, mode='eval', max_T=50):
+    def __init__(self, objects_path, object_name, img_shape, use_img=True, continuous=True, last_k=3, voxel_weights=None, rmax=0.9, k_t=0, mode='eval', max_T=50):
 
         super(SphereEnv, self).__init__()
         self.objects_path = objects_path
+        self.object_name = object_name
         self.voxel_weights = voxel_weights
         self.continuous = continuous
-        self.spc = space_carving_rotation_2d(self.objects_path,
+        self.spc = space_carving_rotation_2d(self.objects_path, object_name,
                                              voxel_weights=self.voxel_weights,
                                              continuous=self.continuous)
         self.max_reward = rmax
@@ -22,7 +23,7 @@ class SphereEnv(dm_env.Environment):
         self.sphere_radius = 5
         self.opt_theta = np.pi*np.array([1/2,1/4,3/4,1/2,1/4,3/4])
         self.opt_phi = np.pi*np.array([0,1/2,1/2,1,-1/2,-1/2])
-        self.opt_pos = self.sphere_radius * angle_to_position_continuous(self.opt_theta, self.opt_phi).T
+        self.opt_pos = angle_to_position_continuous(self.opt_theta, self.opt_phi).T
 
         self.img_shape = img_shape # for reshaping images
 
@@ -76,9 +77,9 @@ class SphereEnv(dm_env.Environment):
         # create space carving objects
         self.spc.reset()
 
-        pos = np.where(self.continuous, self.spc.radius*angle_to_position_continuous(self.current_theta, self.current_phi),
-                                        self.spc.radius*angle_to_position_continuous((self.current_theta+1)*np.pi/8,
-                                                                                     self.current_phi*np.pi/90))
+        pos = np.where(self.continuous, angle_to_position_continuous(self.current_theta, self.current_phi),
+                                        angle_to_position_continuous((self.current_theta+1)*np.pi/8,
+                                                                      self.current_phi*np.pi/90))
         self.pos = pos
         self.last_k_pos = np.concatenate([pos]*self.last_k)
 
@@ -128,9 +129,9 @@ class SphereEnv(dm_env.Environment):
         #                                  axis=-1)
         self.observation_shape = self.observation.shape
 
-        pos = np.where(self.continuous, self.spc.radius*angle_to_position_continuous(self.current_theta, self.current_phi),
-                                        self.spc.radius*angle_to_position_continuous((self.current_theta+1)*np.pi/8,
-                                                                                     self.current_phi*np.pi/90))
+        pos = np.where(self.continuous, angle_to_position_continuous(self.current_theta, self.current_phi),
+                                        angle_to_position_continuous((self.current_theta+1)*np.pi/8,
+                                                                      self.current_phi*np.pi/90))
         self.pos = pos
         self.last_k_pos = np.concatenate((self.last_k_pos[3:],pos))
 
@@ -173,6 +174,8 @@ class SphereEnv(dm_env.Environment):
             self.current_phi = self.calculate_angle(self.current_phi, 2*np.pi, phi)
         else:
             action = action.item()
+            if isinstance(action, float): # add this cond for actions obtained by randomization (by default a float)
+                action = np.random.randint(len(self.actions))
             theta, phi = self.actions[action]
             self.current_theta = theta
             self.current_phi = self.calculate_angle(self.current_phi, self.phi_n_positions, phi)

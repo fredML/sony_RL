@@ -13,7 +13,7 @@ import rlviewer
 os.chdir(path)
 
 class space_carving_rotation_2d():
-    def __init__(self, model_path, total_phi_positions=180, voxel_weights=None, n_holes=3, continuous=True):
+    def __init__(self, model_path, object_name, total_phi_positions=180, voxel_weights=None, list_holes=None, continuous=True):
 
         self.camera_model = json.load(
                 open(os.path.join(model_path, 'camera_model.json')))
@@ -40,18 +40,16 @@ class space_carving_rotation_2d():
             self.voxel_weights = np.zeros(self.vol_shape)
             origin_pos = np.array([5,0,0])
             neigh_xyz = origin_pos + np.array([[-h,r*np.cos(theta),r*np.sin(theta)] for theta in
-            np.linspace(0,2*np.pi,10) for r in np.linspace(0,self.hole_radius,5) for h in np.linspace(1,9,10)])
+            np.linspace(0,2*np.pi,10) for r in np.linspace(0,self.hole_radius,10) for h in np.linspace(1,9,10)])
             self.neigh_ijk = []
             self.neigh_ijk.append((neigh_xyz - self.origin)/self.voxel_size)
             self.pos = [origin_pos]
-            for _ in range (n_holes-1):
-                new_pos = origin_pos
-                while np.min(np.linalg.norm(new_pos-np.array(self.pos),axis=1)) < 2: #make sure the new hole is far from the previous ones
-                    a, b = np.random.uniform(low=[-np.pi/2,-np.pi],high=[np.pi/2,np.pi],size=2)
-                    r1 = Rot.from_rotvec([0,0,b])
-                    r2 = Rot.from_rotvec([a,0,0])
-                    r = r2*r1
-                    new_pos = r.apply(origin_pos)
+            for i in list_holes:
+                a, b = i
+                r1 = Rot.from_rotvec([0,0,b])
+                r2 = Rot.from_rotvec([a,0,0])
+                r = r2*r1
+                new_pos = r.apply(origin_pos)
                 new_neigh_xyz = r.apply(neigh_xyz)
                 self.neigh_ijk.append((new_neigh_xyz - self.origin)/self.voxel_size)
                 self.pos.append(new_pos)
@@ -65,7 +63,7 @@ class space_carving_rotation_2d():
         self.continuous = continuous
 
         if self.continuous:
-            rlviewer.load(os.path.join(model_path,'sphere.obj')) 
+            rlviewer.load(os.path.join(model_path, object_name)) 
             rlviewer.set_light(0, 120, 0, 0, 5000) 
             rlviewer.set_light(1, -120, 0, 0, 5000) 
             rlviewer.set_light(2, 0, 0, 120, 5000) 

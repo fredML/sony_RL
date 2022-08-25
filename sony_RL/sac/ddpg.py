@@ -43,7 +43,7 @@ class DDPG(OffPolicyActorCritic):
         units_critic=(256, 256),
         d2rl=False,
         std=0.1,
-        update_interval_policy=2,
+        update_interval_policy=1000,
     ):
         super(DDPG, self).__init__(
             num_agent_steps=num_agent_steps,
@@ -87,8 +87,8 @@ class DDPG(OffPolicyActorCritic):
         actor_init, actor_apply = hk.without_apply_rng(hk.transform(fn_actor))
         self.actor_apply_jit = jax.jit(actor_apply)
 
-        dummy_state = np.random.uniform(0,1,15)[None]
-        dummy_action = np.random.uniform(-1,1,action_space.shape)[None]
+        dummy_state = np.random.uniform(0,1,state_space.shape)[None]
+        dummy_action = np.random.uniform(-1,1,len(action_space.shape))[None]
 
         self.encoder = encoder
         if encoder is not None:
@@ -141,7 +141,7 @@ class DDPG(OffPolicyActorCritic):
             state = state[2]
             state = jnp.reshape(state, (1, -1))
         action = self.actor_apply_jit(params_actor, state)
-        return add_noise(action, key, self.std, -1.0, 1.0)
+        return add_noise(action, key, self.std, -jnp.pi/2, jnp.pi/2)
 
     def update(self, writer=None):
         self.learning_step += 1
