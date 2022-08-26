@@ -25,24 +25,25 @@ class SAC(OffPolicyActorCritic):
         state_space,
         action_space,
         seed,
-        encoder = None,
+        encoder=None,
         max_grad_norm=None,
+        scale_reward=1,
         gamma=0.99,
         nstep=1,
         num_critics=2,
         buffer_size=10 ** 3,
         use_per=False,
         batch_size=32,
-        start_steps=10000,
+        start_steps=1000,
         update_interval=1,
         tau=5e-3,
         fn_actor=None,
         fn_critic=None,
-        lr_actor=1e-4,
-        lr_critic=5e-4,
+        lr_actor=3e-4,
+        lr_critic=3e-4,
         lr_alpha=3e-4,
-        units_actor=(400, 300),
-        units_critic=(400, 300),
+        units_actor=(256, 256),
+        units_critic=(256, 256),
         log_std_min=-20.0,
         log_std_max=1.0,
         d2rl=False,
@@ -102,8 +103,8 @@ class SAC(OffPolicyActorCritic):
         actor_init, actor_apply = hk.without_apply_rng(hk.transform(fn_actor))
         self.actor_apply_jit = jax.jit(actor_apply)
 
-        dummy_state = np.random.uniform(0,1,15)[None]
-        dummy_action = np.random.uniform(-1,1,action_space.shape)[None]
+        dummy_state = np.random.uniform(0,1,state_space.shape)[None]
+        dummy_action = np.random.uniform(-1,1,len(action_space.shape))[None]
 
         self.encoder = encoder
         if encoder is not None:
@@ -123,13 +124,12 @@ class SAC(OffPolicyActorCritic):
         opt_init, self.opt_actor = optax.radam(lr_actor)
         self.opt_state_actor = opt_init(self.params_actor)
 
-        # Entropy coefficient.
-        if not hasattr(self, "target_entropy"):
-            self.target_entropy = -float(self.action_space.shape[0])
-
+        self.target_entropy = -np.prod(self.action_space.shape)
         self.log_alpha = jnp.array(np.log(init_alpha), dtype=jnp.float32)
         opt_init, self.opt_alpha = optax.radam(lr_alpha, b1=adam_b1_alpha)
         self.opt_state_alpha = opt_init(self.log_alpha)
+
+        self.scale_reward = scale_reward
 
     @partial(jax.jit, static_argnums=0)
     def _select_action(
@@ -144,7 +144,7 @@ class SAC(OffPolicyActorCritic):
             state = state[2]
             state = jnp.reshape(state, (1, -1))
         mean, _ = self.actor_apply_jit(params_actor, state)
-        return jnp.tanh(mean)
+        return jnp.pi/4*jnp.tanh(mean)
 
     @partial(jax.jit, static_argnums=0)
     def _explore(
@@ -166,6 +166,7 @@ class SAC(OffPolicyActorCritic):
         self.learning_step += 1
         weight, batch = self.buffer.sample(self.batch_size)
         state, action, reward, done, next_state = batch
+        reward = reward*self.scale_reward
 
         if self.encoder is not None:
 

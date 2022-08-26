@@ -4,6 +4,7 @@ from typing import Tuple
 
 import jax
 import jax.numpy as jnp
+from jax.scipy.stats import norm
 import numpy as np
 from jax import nn
 
@@ -75,9 +76,10 @@ def reparameterize_gaussian_and_tanh(
     """
     std = jnp.exp(log_std)
     noise = jax.random.normal(key, std.shape)
-    action = jnp.tanh(mean + noise * std)
+    action = jnp.pi/4*jnp.tanh(mean + noise * std)
     if return_log_pi:
-        return action, gaussian_and_tanh_log_prob(log_std, noise, action).sum(axis=1, keepdims=True)
+        #return action, gaussian_and_tanh_log_prob(log_std, noise, action).sum(axis=1, keepdims=True)
+        return action, norm.logpdf(action).sum(axis=1)
     else:
         return action
 
