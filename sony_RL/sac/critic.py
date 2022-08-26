@@ -63,18 +63,17 @@ class ContinuousQFunction(hk.Module):
                     hidden_scale=np.sqrt(2),
                     output_scale=0.1,
                     d2rl=self.d2rl,)(s)
-            s = MLP(10, (200,), hidden_activation=nn.relu)(s) #preprocess state before concatenating ? or preprocess action ?
+            s = MLP(5, (32,32), hidden_activation=nn.leaky_relu, output_scale=0.1)(s) #preprocess state before concatenating ? or preprocess action ?
             x = jnp.concatenate([s, a], axis=1)
             x = MLP(
                 1,
                 self.hidden_units,
                 hidden_activation=nn.relu,
                 hidden_scale=1,
-                output_scale=0.01,
                 d2rl=self.d2rl,
             )(x)
 
-            x = jnp.clip(x, -5, 5)
+            #x = jnp.clip(x, -5, 5)
             return x
 
         

@@ -62,7 +62,6 @@ class StateDependentGaussianPolicy(hk.Module):
             2 * len(self.action_space.shape),
             self.hidden_units,
             hidden_activation=nn.relu,
-            output_scale=0.01,
             d2rl=self.d2rl,
         )(x)
         mean, log_std = jnp.split(x, 2, axis=1)
