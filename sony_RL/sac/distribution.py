@@ -29,7 +29,7 @@ def gaussian_and_tanh_log_prob(
     """
     Calculate log probabilities of gaussian distributions and tanh transformation.
     """
-    return gaussian_log_prob(log_std, noise) - jnp.log(nn.relu(1.0 - jnp.square(action)) + 1e-6)
+    return gaussian_log_prob(log_std, noise) - jnp.log(nn.relu(1.0 - jnp.square(action)) + 1e-6) #relu to avoid negative in log
 
 
 @jax.jit
@@ -76,14 +76,15 @@ def reparameterize_gaussian_and_tanh(
     """
     std = jnp.exp(log_std)
     noise = jax.random.normal(key, std.shape)
-    action = mean + noise * std
+    action = jnp.tanh(mean + noise * std)
     if return_log_pi:
-        #return action, gaussian_and_tanh_log_prob(log_std, noise, action).sum(axis=1, keepdims=True)
-        log_pi = norm.logpdf(action.flatten(), loc=mean.flatten(), scale=std.flatten()+1e-6) #add small eps to avoid nan values
-        #log_pi = jnp.maximum(log_pi, -1e3) 
-        return jnp.tanh(action), log_pi.reshape(std.shape).sum(axis=1, keepdims=True) - jnp.log(1-jnp.tanh(action)**2).sum(axis=1, keepdims=True)
+        log_pi = gaussian_and_tanh_log_prob(log_std, noise, action).sum(axis=1, keepdims=True)
+        '''log_pi = norm.logpdf(action.flatten(), loc=mean.flatten(), scale=std.flatten()+1e-6) #add small eps to avoid nan values
+        log_pi = log_pi.reshape(std.shape).sum(axis=1, keepdims=True)
+        log_pi -= jnp.log(1-jnp.tanh(action)**2).sum(axis=1, keepdims=True)'''
+        return action, log_pi
     else:
-        return jnp.tanh(action)
+        return action
 
 
 @jax.jit
