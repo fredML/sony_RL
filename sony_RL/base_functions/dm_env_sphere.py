@@ -77,12 +77,6 @@ class SphereEnv(dm_env.Environment):
         # create space carving objects
         self.spc.reset()
 
-        pos = np.where(self.continuous, angle_to_position_continuous(self.current_theta, self.current_phi),
-                                        angle_to_position_continuous((self.current_theta+1)*np.pi/8,
-                                                                      self.current_phi*np.pi/90))
-        self.pos = pos
-        self.last_k_pos = np.concatenate([pos]*self.last_k)
-
         if self.use_img:
             if self.continuous:
                 img = self.spc.get_image_continuous(self.current_theta, self.current_phi)
@@ -101,6 +95,12 @@ class SphereEnv(dm_env.Environment):
             self.observation = self.last_k_img.astype('float32')
         
         else:
+            if self.continuous:
+                pos = angle_to_position_continuous(self.current_theta, self.current_phi)
+            else:
+                pos = angle_to_position_continuous((self.current_theta+1)*np.pi/8, self.current_phi*np.pi/90)
+            self.pos = pos
+            self.last_k_pos = np.concatenate([pos]*self.last_k)
             self.observation = self.last_k_pos.astype('float32')
 
         #self.observation = np.concatenate((self.observation,np.tanh(self.max_T-self.num_steps)*np.ones_like(self.observation)),
@@ -127,13 +127,6 @@ class SphereEnv(dm_env.Environment):
         
         #self.observation = np.concatenate((self.observation,np.tanh(self.max_T-self.num_steps)*np.ones_like(self.observation)),
         #                                  axis=-1)
-        self.observation_shape = self.observation.shape
-
-        pos = np.where(self.continuous, angle_to_position_continuous(self.current_theta, self.current_phi),
-                                        angle_to_position_continuous((self.current_theta+1)*np.pi/8,
-                                                                      self.current_phi*np.pi/90))
-        self.pos = pos
-        self.last_k_pos = np.concatenate((self.last_k_pos[3:],pos))
 
         if self.use_img:
             if self.continuous:
@@ -149,10 +142,20 @@ class SphereEnv(dm_env.Environment):
             canny = cv.Canny(img_gray, 40, 80)[...,None] 
             self.canny = canny
                                                     
-            self.last_k_img = np.concatenate((self.last_k_img[1:], canny[None]), axis=0)
+            temp = np.empty(self.observation_shape)
+            temp[:2] = self.last_k_img[1:]
+            temp[2] = canny[None]
+            self.last_k_img = temp
             self.observation = self.last_k_img.astype('float32')
         
         else:
+            if self.continuous:
+                pos = angle_to_position_continuous(self.current_theta, self.current_phi)
+            else:
+                pos = angle_to_position_continuous((self.current_theta+1)*np.pi/8, self.current_phi*np.pi/90)
+                
+            self.pos = pos
+            self.last_k_pos = np.concatenate((self.last_k_pos[3:], pos))
             self.observation = self.last_k_pos.astype('float32')
 
         if self.total_reward > self.max_reward:
