@@ -36,6 +36,7 @@ class SAC(OffPolicyActorCritic):
         batch_size=32,
         start_steps=1000,
         update_interval=1,
+        update_interval_target=1000,
         tau=5e-3,
         fn_actor=None,
         fn_critic=None,
@@ -47,7 +48,7 @@ class SAC(OffPolicyActorCritic):
         log_std_min=-20.0,
         log_std_max=1.0,
         d2rl=False,
-        init_alpha=1.0,
+        init_alpha=1,
         adam_b1_alpha=0.9,
         *args,
         **kwargs,
@@ -144,7 +145,7 @@ class SAC(OffPolicyActorCritic):
             state = state[2]
             state = jnp.reshape(state, (1, -1))
         mean, _ = self.actor_apply_jit(params_actor, state)
-        return jnp.pi/4*jnp.tanh(mean)
+        return jnp.tanh(mean)
 
     @partial(jax.jit, static_argnums=0)
     def _explore(
@@ -228,7 +229,8 @@ class SAC(OffPolicyActorCritic):
         )
 
         # Update target network.
-        self.params_critic_target = self._update_target(self.params_critic_target, self.params_critic)
+        if self.agent_step % self.update_interval_target == 0:
+            self.params_critic_target = self._update_target(self.params_critic_target, self.params_critic)
 
         if writer and self.agent_step % 1000 == 0:
             writer.add_scalar("episode/target_q", target.mean(), self.agent_step)

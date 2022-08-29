@@ -76,12 +76,14 @@ def reparameterize_gaussian_and_tanh(
     """
     std = jnp.exp(log_std)
     noise = jax.random.normal(key, std.shape)
-    action = jnp.pi/4*jnp.tanh(mean + noise * std)
+    action = mean + noise * std
     if return_log_pi:
         #return action, gaussian_and_tanh_log_prob(log_std, noise, action).sum(axis=1, keepdims=True)
-        return action, norm.logpdf(action).sum(axis=1)
+        log_pi = norm.logpdf(action.flatten(), loc=mean.flatten(), scale=std.flatten()+1e-6) #add small eps to avoid nan values
+        #log_pi = jnp.maximum(log_pi, -1e3) 
+        return jnp.tanh(action), log_pi.reshape(std.shape).sum(axis=1, keepdims=True) - jnp.log(1-jnp.tanh(action)**2).sum(axis=1, keepdims=True)
     else:
-        return action
+        return jnp.tanh(action)
 
 
 @jax.jit
