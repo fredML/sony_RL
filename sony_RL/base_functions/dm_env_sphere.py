@@ -4,6 +4,7 @@ import dm_env
 from acme import specs
 from utils import angle_to_position_continuous, position_to_angle_continuous
 import cv2 as cv
+from PIL import Image
 
 class SphereEnv(dm_env.Environment):
 
@@ -83,7 +84,7 @@ class SphereEnv(dm_env.Environment):
             else:
                 img = self.spc.get_image(self.current_theta, self.current_phi)
 
-            pil_img = Image.fromarray(img).resize((self.img_shape, self.img_shape))
+            pil_img = Image.fromarray(img).resize((self.img_shape, self.img_shape), Image.Resampling.NEAREST)
             self.img = np.array(pil_img)
             img_gray = np.array(pil_img.convert('L'))
             self.img_gray = img_gray[...,None]
@@ -92,7 +93,7 @@ class SphereEnv(dm_env.Environment):
             self.canny = canny 
                         
             self.last_k_img = np.stack([self.canny]*self.last_k, axis=0) # shape (k,img_size,img_size,1)
-            self.observation = self.last_k_img.astype('float32')
+            self.observation = self.last_k_img
         
         else:
             if self.continuous:
@@ -101,7 +102,7 @@ class SphereEnv(dm_env.Environment):
                 pos = angle_to_position_continuous((self.current_theta+1)*np.pi/8, self.current_phi*np.pi/90)
             self.pos = pos
             self.last_k_pos = np.concatenate([pos]*self.last_k)
-            self.observation = self.last_k_pos.astype('float32')
+            self.observation = self.last_k_pos
 
         #self.observation = np.concatenate((self.observation,np.tanh(self.max_T-self.num_steps)*np.ones_like(self.observation)),
         #                                  axis=-1)
@@ -134,7 +135,7 @@ class SphereEnv(dm_env.Environment):
             else:
                 img = self.spc.get_image(self.current_theta, self.current_phi)
 
-            pil_img = Image.fromarray(img).resize((self.img_shape, self.img_shape))
+            pil_img = Image.fromarray(img).resize((self.img_shape, self.img_shape), Image.Resampling.NEAREST)
             self.img = np.array(pil_img)
             img_gray = np.array(pil_img.convert('L'))
             self.img_gray = img_gray[...,None]
@@ -146,7 +147,7 @@ class SphereEnv(dm_env.Environment):
             temp[:2] = self.last_k_img[1:]
             temp[2] = canny[None]
             self.last_k_img = temp
-            self.observation = self.last_k_img.astype('float32')
+            self.observation = self.last_k_img
         
         else:
             if self.continuous:
@@ -156,17 +157,17 @@ class SphereEnv(dm_env.Environment):
                 
             self.pos = pos
             self.last_k_pos = np.concatenate((self.last_k_pos[3:], pos))
-            self.observation = self.last_k_pos.astype('float32')
+            self.observation = self.last_k_pos
 
         if self.total_reward > self.max_reward:
-            return dm_env.termination(reward=self.reward*1., observation=self.observation)
+            return dm_env.termination(reward=self.reward, observation=self.observation)
 
         if self.num_steps > self.max_T: # for "non-environmental" time limits, it might be better to still bootstrap
-            ts = dm_env.transition(reward=self.reward*1., observation=self.observation)
+            ts = dm_env.transition(reward=self.reward, observation=self.observation)
             self.reset()
             return ts
 
-        return dm_env.transition(reward=self.reward*1., observation=self.observation)
+        return dm_env.transition(reward=self.reward, observation=self.observation)
 
 
     def step(self, action) -> dm_env.TimeStep:
