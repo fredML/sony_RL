@@ -131,6 +131,7 @@ class SAC(OffPolicyActorCritic):
         self.opt_state_alpha = opt_init(self.log_alpha)
 
         self.scale_reward = scale_reward
+        self.update_interval_target = update_interval_target
 
     @partial(jax.jit, static_argnums=0)
     def _select_action(
@@ -207,7 +208,7 @@ class SAC(OffPolicyActorCritic):
             self.buffer.update_priority(abs_td)
 
         # Update actor.
-        self.opt_state_actor, self.params_actor, loss_actor, mean_log_pi = optimize(
+        self.opt_state_actor, self.params_actor, loss_actor, (mean_log_pi, mean_action, std_action) = optimize(
             self._loss_actor,
             self.opt_actor,
             self.opt_state_actor,
@@ -237,6 +238,8 @@ class SAC(OffPolicyActorCritic):
             writer.add_scalar("episode/mean_q", q_val.mean(), self.agent_step)
             writer.add_scalar("episode/done", done.mean(), self.agent_step)
             writer.add_scalar("episode/reward", reward.mean(), self.agent_step)
+            writer.add_scalar("episode/mean_action", mean_action.mean(), self.agent_step)
+            writer.add_scalar("episode/std_action", std_action.mean(), self.agent_step)
             writer.add_scalar("loss/critic", loss_critic, self.agent_step)
             writer.add_scalar("loss/actor", loss_actor, self.agent_step)
             writer.add_scalar("loss/alpha", loss_alpha, self.agent_step)
@@ -257,7 +260,8 @@ class SAC(OffPolicyActorCritic):
             state = state[2]
             state = jnp.reshape(state, (1, -1))
         mean, log_std = self.actor_apply_jit(params_actor, state)
-        return reparameterize_gaussian_and_tanh(mean, log_std, key, True)
+        action, log_pi = reparameterize_gaussian_and_tanh(mean, log_std, key, True)
+        return action, log_pi, mean, jnp.exp(log_std)
 
     @partial(jax.jit, static_argnums=0)
     def _calculate_log_pi(
@@ -298,7 +302,7 @@ class SAC(OffPolicyActorCritic):
         *args,
         **kwargs,
     ) -> Tuple[jnp.ndarray, jnp.ndarray]:
-        next_action, next_log_pi = self._sample_action(params_actor, next_state, *args, **kwargs)
+        next_action, next_log_pi, mean, std = self._sample_action(params_actor, next_state, *args, **kwargs)
         target = self._calculate_target(params_critic_target, log_alpha, reward, done, next_state, next_action, next_log_pi)
         q_list = self._calculate_value_list(params_critic, state, action)
         q_val = jnp.asarray(q_list).min(axis=0)
@@ -315,10 +319,10 @@ class SAC(OffPolicyActorCritic):
         *args,
         **kwargs,
     ) -> Tuple[jnp.ndarray, jnp.ndarray]:
-        action, log_pi = self._sample_action(params_actor, state, *args, **kwargs)
+        action, log_pi, mean, std = self._sample_action(params_actor, state, *args, **kwargs)
         mean_q = self._calculate_value(params_critic, state, action).mean()
         mean_log_pi = self._calculate_log_pi(action, log_pi).mean()
-        return jax.lax.stop_gradient(jnp.exp(log_alpha)) * mean_log_pi - mean_q, jax.lax.stop_gradient(mean_log_pi)
+        return jax.lax.stop_gradient(jnp.exp(log_alpha)) * mean_log_pi - mean_q, (jax.lax.stop_gradient(mean_log_pi), mean, std)
 
     @partial(jax.jit, static_argnums=0)
     def _loss_alpha(
