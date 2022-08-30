@@ -8,7 +8,20 @@ from PIL import Image
 
 class SphereEnv(dm_env.Environment):
 
-    def __init__(self, objects_path, object_name, img_shape, use_img=True, continuous=True, last_k=3, voxel_weights=None, rmax=0.9, k_t=0, mode='eval', max_T=50):
+    def __init__(
+        self, 
+        objects_path, 
+        object_name,
+        img_shape, 
+        use_img=True, 
+        continuous=True, 
+        last_k=3, 
+        voxel_weights=None, 
+        list_holes=None,
+        rmax=0.9, 
+        k_t=0, 
+        mode='eval', 
+        max_T=50):
 
         super(SphereEnv, self).__init__()
         self.objects_path = objects_path
@@ -17,6 +30,7 @@ class SphereEnv(dm_env.Environment):
         self.continuous = continuous
         self.spc = space_carving_rotation_2d(self.objects_path, object_name,
                                              voxel_weights=self.voxel_weights,
+                                             list_holes=list_holes,
                                              continuous=self.continuous)
         self.max_reward = rmax
         self.k_t = k_t #penalty based on number of views
@@ -131,7 +145,7 @@ class SphereEnv(dm_env.Environment):
 
         if self.use_img:
             if self.continuous:
-                img = self.spc.get_image_continuous(self.current_theta, self.current_phi)
+                img = self.spc.img
             else:
                 img = self.spc.get_image(self.current_theta, self.current_phi)
 
