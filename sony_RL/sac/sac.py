@@ -237,7 +237,7 @@ class SAC(OffPolicyActorCritic):
             writer.add_scalar("episode/target_q", target.mean(), self.agent_step)
             writer.add_scalar("episode/mean_q", q_val.mean(), self.agent_step)
             writer.add_scalar("episode/done", done.mean(), self.agent_step)
-            writer.add_scalar("episode/reward", reward.mean(), self.agent_step)
+            writer.add_scalar("episode/reward", reward.mean()/self.scale_reward, self.agent_step)
             writer.add_scalar("episode/mean_action", mean_action.mean(), self.agent_step)
             writer.add_scalar("episode/std_action", std_action.mean(), self.agent_step)
             writer.add_scalar("loss/critic", loss_critic, self.agent_step)

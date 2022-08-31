@@ -13,6 +13,7 @@ class MLP(hk.Module):
         hidden_scale=1.0,
         output_scale=1.0,
         d2rl=False,
+        batch_norm=False,
     ):
         super(MLP, self).__init__()
         self.output_dim = output_dim
@@ -20,16 +21,19 @@ class MLP(hk.Module):
         self.hidden_activation = hidden_activation
         self.output_activation = output_activation
         self.d2rl = d2rl
+        self.batch_norm = batch_norm
         self.hidden_kwargs = {"w_init": hk.initializers.Orthogonal(scale=hidden_scale)}
         self.output_kwargs = {"w_init": hk.initializers.Orthogonal(scale=output_scale)}
 
-    def __call__(self, x):
+    def __call__(self, x, is_training=False):
         x_input = x
         for i, unit in enumerate(self.hidden_units):
             x = hk.Linear(unit, **self.hidden_kwargs)(x)
             x = self.hidden_activation(x)
             if self.d2rl and i + 1 != len(self.hidden_units):
                 x = jnp.concatenate([x, x_input], axis=1)
+            if self.batch_norm:
+                x = hk.BatchNorm(create_scale=True, create_offset=True, decay_rate=0.99)(x, is_training=is_training)
         x = hk.Linear(self.output_dim, **self.output_kwargs)(x)
         if self.output_activation is not None:
             x = self.output_activation(x)

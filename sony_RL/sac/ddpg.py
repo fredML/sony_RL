@@ -39,11 +39,11 @@ class DDPG(OffPolicyActorCritic):
         fn_critic=None,
         lr_actor=1e-5,
         lr_critic=1e-4,
-        units_actor=(256, 256),
-        units_critic=(256, 256),
+        units_actor=(64, 64),
+        units_critic=(64, 64),
         d2rl=False,
         std=0.1,
-        update_interval_policy=1000,
+        update_interval_policy=2,
     ):
         super(DDPG, self).__init__(
             num_agent_steps=num_agent_steps,
@@ -71,6 +71,7 @@ class DDPG(OffPolicyActorCritic):
                     num_critics=num_critics,
                     hidden_units=units_critic,
                     d2rl=d2rl,
+                    batch_norm=True
                 )(s, a)
 
         if fn_actor is None:
@@ -80,11 +81,12 @@ class DDPG(OffPolicyActorCritic):
                     action_space=action_space,
                     hidden_units=units_actor,
                     d2rl=d2rl,
+                    batch_norm=True
                 )(s)
         
-        critic_init, critic_apply = hk.without_apply_rng(hk.transform(fn_critic))
+        critic_init, critic_apply = hk.without_apply_rng(hk.transform_with_state(fn_critic))
         self.critic_apply_jit = jax.jit(critic_apply)
-        actor_init, actor_apply = hk.without_apply_rng(hk.transform(fn_actor))
+        actor_init, actor_apply = hk.without_apply_rng(hk.transform_with_state(fn_actor))
         self.actor_apply_jit = jax.jit(actor_apply)
 
         dummy_state = np.random.uniform(0,1,state_space.shape)[None]
@@ -98,10 +100,11 @@ class DDPG(OffPolicyActorCritic):
             dummy_state = dummy_state.reshape((1,-1))
 
         # Critic.
-        self.params_critic = self.params_critic_target = critic_init(next(self.rng), 
-                                                                          dummy_state,
-                                                                          dummy_action)                                                                                
-        self.params_actor = self.params_actor_target = actor_init(next(self.rng), dummy_state)
+        self.params_critic, self.bn_critic = self.params_critic_target, self.bn_critic_target = critic_init(next(self.rng), 
+                                                                                                            dummy_state,
+                                                                                                            dummy_action)                                                                                
+        self.params_actor, self.bn_actor = self.params_actor_target, self.bn_actor_target = actor_init(next(self.rng), 
+                                                                                                       dummy_state)
 
         opt_init, self.opt_critic = optax.radam(lr_critic)
         self.opt_state_critic = opt_init(self.params_critic)
@@ -117,6 +120,7 @@ class DDPG(OffPolicyActorCritic):
     def _select_action(
         self,
         params_actor: hk.Params,
+        bn_actor,
         state: np.ndarray,
     ) -> jnp.ndarray:
         if self.encoder is not None:
@@ -125,12 +129,13 @@ class DDPG(OffPolicyActorCritic):
             state, _ = vae_apply_jit(params_vae, bn_vae_state, state, False)
             state = state[2]
             state = jnp.reshape(state, (1, -1))
-        return self.actor_apply_jit(params_actor, state)
+        return self.actor_apply_jit(params_actor, bn_actor, state, False)[0]
 
     @partial(jax.jit, static_argnums=0)
     def _explore(
         self,
         params_actor: hk.Params,
+        bn_actor,
         state: np.ndarray,
         key: jnp.ndarray,
     ) -> jnp.ndarray:
@@ -140,7 +145,7 @@ class DDPG(OffPolicyActorCritic):
             state, _ = vae_apply_jit(params_vae, bn_vae_state, state, False)
             state = state[2]
             state = jnp.reshape(state, (1, -1))
-        action = self.actor_apply_jit(params_actor, state)
+        action, _ = self.actor_apply_jit(params_actor, bn_actor, state, False)
         return add_noise(action, key, self.std, -jnp.pi/2, jnp.pi/2)
 
     def update(self, writer=None):
@@ -163,7 +168,7 @@ class DDPG(OffPolicyActorCritic):
             next_state = jnp.reshape(next_state, (self.batch_size, -1))
 
         # Update critic and target.
-        self.opt_state_critic, self.params_critic, loss_critic, (abs_td, target, q_val) = optimize(
+        self.opt_state_critic, self.params_critic, loss_critic, (self.bn_critic, abs_td, target, q_val) = optimize(
             self._loss_critic,
             self.opt_critic,
             self.opt_state_critic,
@@ -171,6 +176,9 @@ class DDPG(OffPolicyActorCritic):
             self.max_grad_norm,
             params_actor_target=self.params_actor_target,
             params_critic_target=self.params_critic_target,
+            bn_critic=self.bn_critic,
+            bn_critic_target=self.bn_critic_target,
+            bn_actor_target=self.bn_actor_target,
             state=state,
             action=action,
             reward=reward,
@@ -180,6 +188,7 @@ class DDPG(OffPolicyActorCritic):
             **self.kwargs_critic,
         )
         self.params_critic_target = self._update_target(self.params_critic_target, self.params_critic)
+        self.bn_critic_target = self._update_target(self.bn_critic_target, self.bn_critic)
 
         # Update priority.
         if self.use_per:
@@ -187,17 +196,20 @@ class DDPG(OffPolicyActorCritic):
 
         # Update actor and target.
         if self.agent_step % self.update_interval_policy == 0:
-            self.opt_state_actor, self.params_actor, loss_actor, _ = optimize(
+            self.opt_state_actor, self.params_actor, loss_actor, self.bn_actor = optimize(
                 self._loss_actor,
                 self.opt_actor,
                 self.opt_state_actor,
                 self.params_actor,
                 self.max_grad_norm,
                 params_critic=self.params_critic,
+                bn_actor=self.bn_actor,
+                bn_critic=self.bn_critic,
                 state=state,
                 **self.kwargs_actor,
             )
             self.params_actor_target = self._update_target(self.params_actor_target, self.params_actor)
+            self.bn_actor_target = self._update_target(self.bn_actor_target, self.bn_actor)
 
             if writer and self.agent_step % 1000 == 0:
                 writer.add_scalar("loss/critic", loss_critic, self.agent_step)
@@ -211,6 +223,7 @@ class DDPG(OffPolicyActorCritic):
     def _sample_action(
         self,
         params_actor: hk.Params,
+        bn_actor,
         state: np.ndarray,
     ) -> jnp.ndarray:
         if (self.encoder is not None) & (len(state.shape) > 2):
@@ -219,18 +232,19 @@ class DDPG(OffPolicyActorCritic):
             state, _ = vae_apply_jit(params_vae, bn_vae_state, state, False)
             state = state[2]
             state = jnp.reshape(state, (1, -1))
-        return self.actor_apply_jit(params_actor, state)
+        return self.actor_apply_jit(params_actor, bn_actor, state, True)
 
     @partial(jax.jit, static_argnums=0)
     def _calculate_target(
         self,
         params_critic_target: hk.Params,
+        bn_critic_target,
         reward: np.ndarray,
         done: np.ndarray,
         next_state: np.ndarray,
         next_action: jnp.ndarray,
     ) -> jnp.ndarray:
-        next_q = self._calculate_value(params_critic_target, next_state, next_action)
+        next_q, _ = self._calculate_value(params_critic_target, bn_critic_target, next_state, next_action)
         return jax.lax.stop_gradient(reward + (1.0 - done) * self.discount * next_q)
 
     @partial(jax.jit, static_argnums=0)
@@ -239,6 +253,9 @@ class DDPG(OffPolicyActorCritic):
         params_critic: hk.Params,
         params_critic_target: hk.Params,
         params_actor_target: hk.Params,
+        bn_critic,
+        bn_critic_target,
+        bn_actor_target,
         state: np.ndarray,
         action: np.ndarray,
         reward: np.ndarray,
@@ -248,20 +265,22 @@ class DDPG(OffPolicyActorCritic):
         *args,
         **kwargs,
     ) -> Tuple[jnp.ndarray, jnp.ndarray]:
-        next_action = self._sample_action(params_actor_target, next_state, *args, **kwargs)
-        target = self._calculate_target(params_critic_target, reward, done, next_state, next_action)
-        q_list = self._calculate_value_list(params_critic, state, action)
+        next_action, _ = self._sample_action(params_actor_target, bn_actor_target, next_state, *args, **kwargs)
+        target = self._calculate_target(params_critic_target, bn_critic_target, reward, done, next_state, next_action)
+        q_list, bn_critic = self._calculate_value_list(params_critic, bn_critic, state, action)
         q_val = q_list[0]
         loss_critic, abs_td = self._calculate_loss_critic_and_abs_td(q_list, target, weight)
-        return loss_critic, (abs_td, target, q_val)
+        return loss_critic, (bn_critic, abs_td, target, q_val)
 
     @partial(jax.jit, static_argnums=0)
     def _loss_actor(
         self,
         params_actor: hk.Params,
         params_critic: hk.Params,
+        bn_actor,
+        bn_critic,
         state: np.ndarray,
     ) -> jnp.ndarray:
-        action = self.actor_apply_jit(params_actor, state)
-        mean_q = self.critic_apply_jit(params_critic, state, action)[0].mean()
-        return -mean_q, None
+        action, bn_actor = self.actor_apply_jit(params_actor, bn_actor, state, True)
+        mean_q, _ = self.critic_apply_jit(params_critic, bn_critic, state, action, False)[0].mean()
+        return -mean_q, bn_actor

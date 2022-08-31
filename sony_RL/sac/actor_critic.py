@@ -32,15 +32,15 @@ class ActorCriticMixIn:
         return {"key": next(self.rng)} if self.use_key_actor else {}
 
     def select_action(self, state):
-        action = self._select_action(self.params_actor, state[None, ...])
+        action = self._select_action(self.params_actor, self.bn_actor, state[None, ...])
         return np.array(action[0])
 
     @abstractmethod
-    def _select_action(self, params_actor, state):
+    def _select_action(self, params_actor, bn_actor, state):
         pass
 
     @abstractmethod
-    def _explore(self, params_actor, state, key):
+    def _explore(self, params_actor, bn_actor, state, key):
         pass
 
     def save_params(self, save_dir):
@@ -133,7 +133,7 @@ class OffPolicyActorCritic(ActorCriticMixIn, OffPolicyAlgorithm):
         self.num_critics = num_critics
 
     def explore(self, state):
-        action = self._explore(self.params_actor, state[None, ...], next(self.rng))
+        action = self._explore(self.params_actor, self.bn_actor, state[None, ...], next(self.rng))
         return np.array(action[0])
 
     @abstractmethod
@@ -144,19 +144,22 @@ class OffPolicyActorCritic(ActorCriticMixIn, OffPolicyAlgorithm):
     def _calculate_value_list(
         self,
         params_critic: hk.Params,
+        bn_critic,
         state: np.ndarray,
         action: np.ndarray,
     ) -> List[jnp.ndarray]:
-        return self.critic_apply_jit(params_critic, state, action)
+        return self.critic_apply_jit(params_critic, bn_critic, state, action, True)
 
     @partial(jax.jit, static_argnums=0)
     def _calculate_value(
         self,
         params_critic: hk.Params,
+        bn_critic,
         state: np.ndarray,
         action: np.ndarray,
     ) -> jnp.ndarray:
-        return jnp.asarray(self._calculate_value_list(params_critic, state, action)).min(axis=0)
+        res = self._calculate_value_list(params_critic, bn_critic, state, action)
+        return jnp.asarray(res[0]).min(axis=0), res[1]
 
     @abstractmethod
     def _calculate_target(self, params_critic_target, reward, done, next_state, next_action, *args, **kwargs):

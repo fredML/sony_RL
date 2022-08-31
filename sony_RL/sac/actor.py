@@ -14,23 +14,25 @@ class DeterministicPolicy(hk.Module):
     def __init__(
         self,
         action_space,
-        hidden_units=(256, 256),
+        hidden_units=(64, 64),
         d2rl=False,
+        batch_norm=False
     ):
         super(DeterministicPolicy, self).__init__()
         self.action_space = action_space
         self.hidden_units = hidden_units
         self.d2rl = d2rl
+        self.batch_norm = batch_norm
 
-    def __call__(self, x):
+    def __call__(self, x, is_training=False):
         return MLP(
             len(self.action_space.shape),
             self.hidden_units,
-            hidden_activation=nn.relu,
+            hidden_activation=nn.leaky_relu,
             output_activation=jnp.tanh,
-            output_scale=0.1,
             d2rl=self.d2rl,
-        )(x)
+            batch_norm=self.batch_norm
+        )(x, is_training)
 
 
 class StateDependentGaussianPolicy(hk.Module):
@@ -46,6 +48,7 @@ class StateDependentGaussianPolicy(hk.Module):
         log_std_max=1.0,
         clip_log_std=True,
         d2rl=False,
+        batch_norm=False
     ):
         super(StateDependentGaussianPolicy, self).__init__()
         self.action_space = action_space
@@ -54,16 +57,18 @@ class StateDependentGaussianPolicy(hk.Module):
         self.log_std_max = log_std_max
         self.clip_log_std = clip_log_std
         self.d2rl = d2rl
+        self.batch_norm = batch_norm
 
-    def __call__(self, x):
+    def __call__(self, x, is_training=False):
         if len(x.shape)==4:
             x = DQNBody()(x)
         x = MLP(
             2 * len(self.action_space.shape),
             self.hidden_units,
-            hidden_activation=nn.relu,
+            hidden_activation=nn.leaky_relu,
             d2rl=self.d2rl,
-        )(x)
+            batch_norm=self.batch_norm
+        )(x, is_training)
         mean, log_std = jnp.split(x, 2, axis=1)
         if self.clip_log_std:
             log_std = jnp.clip(log_std, self.log_std_min, self.log_std_max)

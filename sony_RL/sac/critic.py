@@ -44,16 +44,18 @@ class ContinuousQFunction(hk.Module):
     def __init__(
         self,
         num_critics=2,
-        hidden_units=(256, 256),
+        hidden_units=(64, 64),
         d2rl=False,
+        batch_norm=False
     ):
         super(ContinuousQFunction, self).__init__()
         self.num_critics = num_critics
         self.hidden_units = hidden_units
         self.d2rl = d2rl
+        self.batch_norm = batch_norm
 
-    def __call__(self, s, a):
-        def _fn(s, a):
+    def __call__(self, s, a, is_training=False):
+        def _fn(s, a, is_training):
             if len(s.shape) == 4:
                 s = DQNBody()(s)
                 s = MLP(
@@ -63,22 +65,22 @@ class ContinuousQFunction(hk.Module):
                     hidden_scale=np.sqrt(2),
                     output_scale=0.1,
                     d2rl=self.d2rl,)(s)
-            s = MLP(5, (32,32), hidden_activation=nn.leaky_relu, output_scale=0.1)(s) #preprocess state before concatenating ? or preprocess action ?
+            s = MLP(5, 64, hidden_activation=nn.leaky_relu, output_scale=0.1, batch_norm=self.batch_norm)(s, is_training) #preprocess state before concatenating ? or preprocess action ?
             x = jnp.concatenate([s, a], axis=1)
             x = MLP(
                 1,
                 self.hidden_units,
-                hidden_activation=nn.relu,
-                hidden_scale=1,
+                hidden_activation=nn.leaky_relu,
                 d2rl=self.d2rl,
-            )(x)
+                batch_norm=self.batch_norm
+            )(x, is_training)
 
             #x = jnp.clip(x, -5, 5)
             return x
 
         
         # Return list even if num_critics == 1 for simple implementation.
-        return [_fn(s, a) for _ in range(self.num_critics)]
+        return [_fn(s, a, is_training) for _ in range(self.num_critics)]
 
 
 class ContinuousQuantileFunction(hk.Module):
