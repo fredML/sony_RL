@@ -24,7 +24,7 @@ class DeterministicPolicy(hk.Module):
         self.d2rl = d2rl
         self.batch_norm = batch_norm
 
-    def __call__(self, x, is_training=False):
+    def __call__(self, x, is_training):
         return MLP(
             len(self.action_space.shape),
             self.hidden_units,
@@ -59,7 +59,7 @@ class StateDependentGaussianPolicy(hk.Module):
         self.d2rl = d2rl
         self.batch_norm = batch_norm
 
-    def __call__(self, x, is_training=False):
+    def __call__(self, x, is_training):
         if len(x.shape)==4:
             x = DQNBody()(x)
         x = MLP(

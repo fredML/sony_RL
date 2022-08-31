@@ -66,28 +66,28 @@ class DDPG(OffPolicyActorCritic):
 
         if fn_critic is None:
 
-            def fn_critic(s, a):
+            def fn_critic(s, a, is_training):
                 return ContinuousQFunction(
                     num_critics=num_critics,
                     hidden_units=units_critic,
                     d2rl=d2rl,
                     batch_norm=True
-                )(s, a)
+                )(s, a, is_training)
 
         if fn_actor is None:
 
-            def fn_actor(s):
+            def fn_actor(s, is_training):
                 return DeterministicPolicy(
                     action_space=action_space,
                     hidden_units=units_actor,
                     d2rl=d2rl,
                     batch_norm=True
-                )(s)
+                )(s, is_training)
         
         critic_init, critic_apply = hk.without_apply_rng(hk.transform_with_state(fn_critic))
-        self.critic_apply_jit = jax.jit(critic_apply)
+        self.critic_apply_jit = jax.jit(critic_apply, static_argnums=4)
         actor_init, actor_apply = hk.without_apply_rng(hk.transform_with_state(fn_actor))
-        self.actor_apply_jit = jax.jit(actor_apply)
+        self.actor_apply_jit = jax.jit(actor_apply, static_argnums=3)
 
         dummy_state = np.random.uniform(0,1,state_space.shape)[None]
         dummy_action = np.random.uniform(-1,1,len(action_space.shape))[None]
@@ -102,9 +102,11 @@ class DDPG(OffPolicyActorCritic):
         # Critic.
         self.params_critic, self.bn_critic = self.params_critic_target, self.bn_critic_target = critic_init(next(self.rng), 
                                                                                                             dummy_state,
-                                                                                                            dummy_action)                                                                                
+                                                                                                            dummy_action,
+                                                                                                            True)                                                                                
         self.params_actor, self.bn_actor = self.params_actor_target, self.bn_actor_target = actor_init(next(self.rng), 
-                                                                                                       dummy_state)
+                                                                                                       dummy_state,
+                                                                                                       True)
 
         opt_init, self.opt_critic = optax.radam(lr_critic)
         self.opt_state_critic = opt_init(self.params_critic)
@@ -232,7 +234,7 @@ class DDPG(OffPolicyActorCritic):
             state, _ = vae_apply_jit(params_vae, bn_vae_state, state, False)
             state = state[2]
             state = jnp.reshape(state, (1, -1))
-        return self.actor_apply_jit(params_actor, bn_actor, state, True)
+        return self.actor_apply_jit(params_actor, bn_actor, state, False)
 
     @partial(jax.jit, static_argnums=0)
     def _calculate_target(
@@ -282,5 +284,6 @@ class DDPG(OffPolicyActorCritic):
         state: np.ndarray,
     ) -> jnp.ndarray:
         action, bn_actor = self.actor_apply_jit(params_actor, bn_actor, state, True)
-        mean_q, _ = self.critic_apply_jit(params_critic, bn_critic, state, action, False)[0].mean()
+        mean_q, _ = self.critic_apply_jit(params_critic, bn_critic, state, action, False)
+        mean_q = mean_q[0].mean()
         return -mean_q, bn_actor
