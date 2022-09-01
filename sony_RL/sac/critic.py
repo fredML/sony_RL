@@ -56,7 +56,7 @@ class ContinuousQFunction(hk.Module):
 
     def __call__(self, s, a, is_training):
         def _fn(s, a, is_training):
-            if len(s.shape) == 4:
+            '''if len(s.shape) == 4:
                 s = DQNBody()(s)
                 s = MLP(
                     5,
@@ -65,7 +65,7 @@ class ContinuousQFunction(hk.Module):
                     hidden_scale=np.sqrt(2),
                     output_scale=0.1,
                     d2rl=self.d2rl,)(s)
-            s = MLP(5, (64,), hidden_activation=nn.leaky_relu, output_scale=0.1, batch_norm=self.batch_norm)(s, is_training) #preprocess state before concatenating ? or preprocess action ?
+            s = MLP(5, (64,), hidden_activation=nn.leaky_relu, output_scale=0.1, batch_norm=self.batch_norm)(s, is_training)'''
             x = jnp.concatenate([s, a], axis=1)
             x = MLP(
                 1,

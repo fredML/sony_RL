@@ -144,25 +144,27 @@ class OffPolicyActorCritic(ActorCriticMixIn, OffPolicyAlgorithm):
     def _sample_action(self, params_actor, state, *args, **kwargs):
         pass
 
-    @partial(jax.jit, static_argnums=0)
+    @partial(jax.jit, static_argnums=[0,3])
     def _calculate_value_list(
         self,
         params_critic: hk.Params,
         bn_critic,
+        is_training,
         state: np.ndarray,
         action: np.ndarray,
     ) -> List[jnp.ndarray]:
-        return self.critic_apply_jit(params_critic, bn_critic, state, action, True)
+        return self.critic_apply_jit(params_critic, bn_critic, state, action, is_training)
 
-    @partial(jax.jit, static_argnums=0)
+    @partial(jax.jit, static_argnums=[0,3])
     def _calculate_value(
         self,
         params_critic: hk.Params,
         bn_critic,
+        is_training,
         state: np.ndarray,
         action: np.ndarray,
     ) -> jnp.ndarray:
-        res = self._calculate_value_list(params_critic, bn_critic, state, action)
+        res = self._calculate_value_list(params_critic, bn_critic, is_training, state, action)
         return jnp.asarray(res[0]).min(axis=0), res[1]
 
     @abstractmethod
