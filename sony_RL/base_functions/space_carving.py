@@ -3,7 +3,7 @@ import json
 import glob
 import os
 from copy import deepcopy
-from utils import angle_to_position_continuous, get_mask_background, set_sc, make_extrinsics
+from utils import get_mask_background, set_sc
 
 path = os.getcwd()
 os.chdir('/mnt/diskSustainability/frederic/rlviewer')
@@ -39,7 +39,7 @@ class space_carving_rotation_2d():
             self.voxel_weights = np.zeros(self.vol_shape)
             origin_pos = np.array([5,0,0])
             neigh_xyz = origin_pos + np.array([[-h,r*np.cos(theta),r*np.sin(theta)] for theta in
-            np.linspace(0,2*np.pi,10) for r in np.linspace(0,self.hole_radius,10) for h in np.linspace(0,10,30)])
+            np.linspace(0,2*np.pi,10) for r in np.linspace(0,self.hole_radius,10) for h in np.linspace(1,9,30)])
             self.neigh_ijk = []
             self.neigh_ijk.append((neigh_xyz - self.origin)/self.voxel_size)
             self.pos = [origin_pos]
@@ -76,16 +76,16 @@ class space_carving_rotation_2d():
         
             self.masks_files = sorted(
                 glob.glob(os.path.join(model_path, 'masks', '*.npy')))
-
-            self.gt_files = sorted(
-                glob.glob(os.path.join(model_path, 'ground_truth_volumes', '*.npy')))
             
             self.extrinsics = self.load_extrinsics(
                 os.path.join(model_path, 'extrinsics'))
 
+            '''self.gt_files = sorted(
+                glob.glob(os.path.join(model_path, 'ground_truth_volumes', '*.npy')))
+
             self.gt = np.load(self.gt_files[0])
             self.gt_solid_mask = np.where(self.gt == 1, True, False)
-            self.gt_n_solid_voxels = np.sum(self.gt_solid_mask*self.voxel_weights)
+            self.gt_n_solid_voxels = np.sum(self.gt_solid_mask*self.voxel_weights)'''
         
 
     def reset(self):

@@ -40,7 +40,7 @@ class DQN(QLearning):
         setup_net=True,
         fn=None,
         lr=2.5e-4,
-        units=(256,256),
+        units=(64,64),
     ):
         super(DQN, self).__init__(
             num_agent_steps=num_agent_steps,
@@ -77,11 +77,17 @@ class DQN(QLearning):
             self.net_apply = jax.jit(net_apply)
             self.encoder = encoder
             dummy_state = np.random.uniform(0, 1, state_space.shape)[None]
+
             if encoder is not None:
                 vae_apply_jit, params_vae, bn_vae_state = self.encoder
                 dummy_state, _ = vae_apply_jit(params_vae, bn_vae_state, np.random.uniform(0,1,state_space.shape), False)
                 dummy_state = dummy_state[2]
                 dummy_state = dummy_state.reshape((1,-1))
+
+            elif (self.encoder is None) & (len(self.state_space.shape)>=3):
+                dummy_state = dummy_state[..., 0]
+                dummy_state = np.moveaxis(dummy_state, 1, -1)
+
             self.params = self.params_target = net_init(next(self.rng), dummy_state)
             opt_init, self.opt = optax.adam(lr, eps=0.01 / batch_size)
             self.opt_state = opt_init(self.params)
@@ -98,6 +104,9 @@ class DQN(QLearning):
             state, _ = vae_apply_jit(params_vae, bn_vae_state, state, False)
             state = state[2]
             state = jnp.reshape(state, (1, -1))
+        elif (self.encoder is None) & (len(self.state_space.shape)>=3):
+            state = state[..., 0]
+            state = np.moveaxis(state, 1, -1)
         return jnp.argmax(self.net_apply(params, state), axis=1)
 
     def update(self, writer=None):
@@ -119,6 +128,12 @@ class DQN(QLearning):
 
             state = jnp.reshape(state, (self.batch_size, -1)) # output of vae is (bs*k, latent_dim), need to reshape (bs,k*latent_dim)
             next_state = jnp.reshape(next_state, (self.batch_size, -1))
+        
+        elif (self.encoder is None) & (len(self.state_space.shape)>=3):
+            state = state[..., 0]
+            state = np.moveaxis(state, 1, -1)
+            next_state = next_state[..., 0]
+            next_state = np.moveaxis(next_state, 1, -1)
 
         self.opt_state, self.params, loss, (abs_td, target, q) = optimize(
             self._loss,
