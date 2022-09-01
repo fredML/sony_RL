@@ -46,10 +46,14 @@ class ActorCriticMixIn:
     def save_params(self, save_dir):
         save_params(self.params_critic, os.path.join(save_dir, "params_critic.npz"))
         save_params(self.params_actor, os.path.join(save_dir, "params_actor.npz"))
+        save_params(self.bn_critic, os.path.join(save_dir, "bn_critic.npz"))
+        save_params(self.bn_actor, os.path.join(save_dir, "bn_actor.npz"))
 
     def load_params(self, save_dir):
         self.params_critic = load_params(os.path.join(save_dir, "params_critic.npz"))
         self.params_actor = load_params(os.path.join(save_dir, "params_actor.npz"))
+        self.bn_critic = load_params(os.path.join(save_dir, "bn_critic.npz"))
+        self.bn_actor = load_params(os.path.join(save_dir, "bn_actor.npz"))
 
 
 class OnPolicyActorCritic(ActorCriticMixIn, OnPolicyAlgorithm):
@@ -162,7 +166,7 @@ class OffPolicyActorCritic(ActorCriticMixIn, OffPolicyAlgorithm):
         return jnp.asarray(res[0]).min(axis=0), res[1]
 
     @abstractmethod
-    def _calculate_target(self, params_critic_target, reward, done, next_state, next_action, *args, **kwargs):
+    def _calculate_target(self, params_critic_target, bn_critic_target, reward, done, next_state, next_action, *args, **kwargs):
         pass
 
     @partial(jax.jit, static_argnums=0)
