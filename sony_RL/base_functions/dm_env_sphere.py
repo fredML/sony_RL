@@ -29,12 +29,20 @@ class SphereEnv(dm_env.Environment):
         self.voxel_weights = voxel_weights
         self.continuous = continuous
         self.spc = {}
-        for i, object in enumerate(objects_name):
-            self.spc[object] = space_carving_rotation_2d(
-                                            self.objects_path[i], 
-                                            object,
-                                            list_holes=list_holes[object],
-                                            continuous=self.continuous)
+        if voxel_weights is None:
+            for i, object in enumerate(objects_name):
+                self.spc[object] = space_carving_rotation_2d(
+                                                self.objects_path[i], 
+                                                object,
+                                                list_holes=list_holes[object],
+                                                continuous=self.continuous)
+        else:
+            for i, object in enumerate(objects_name):
+                self.spc[object] = space_carving_rotation_2d(
+                                                self.objects_path[i], 
+                                                object,
+                                                voxel_weights=voxel_weights[object],
+                                                continuous=self.continuous)
         self.max_reward = rmax
         self.k_t = k_t #penalty based on number of views
 

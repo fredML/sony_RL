@@ -34,6 +34,7 @@ class space_carving_rotation_2d():
 
         if voxel_weights is not None:
             self.voxel_weights = voxel_weights
+            self.neigh_ijk = np.where(voxel_weights==1)
         else:
             from scipy.spatial.transform import Rotation as Rot
             self.voxel_weights = np.zeros(self.vol_shape)
