@@ -2,7 +2,7 @@ import numpy as np
 from space_carving import *
 import dm_env
 from acme import specs
-from utils import angle_to_position_continuous, position_to_angle_continuous
+from utils import angle_to_position_continuous
 import cv2 as cv
 from PIL import Image
 
@@ -11,7 +11,7 @@ class SphereEnv(dm_env.Environment):
     def __init__(
         self, 
         objects_path, 
-        object_name,
+        objects_name,
         img_shape, 
         use_img=True, 
         continuous=True, 
@@ -25,20 +25,26 @@ class SphereEnv(dm_env.Environment):
 
         super(SphereEnv, self).__init__()
         self.objects_path = objects_path
-        self.object_name = object_name
+        self.objects_name = objects_name
         self.voxel_weights = voxel_weights
         self.continuous = continuous
-        self.spc = space_carving_rotation_2d(self.objects_path, object_name,
-                                             voxel_weights=self.voxel_weights,
-                                             list_holes=list_holes,
-                                             continuous=self.continuous)
+        self.spc = {}
+        if voxel_weights is None:
+            for i, object in enumerate(objects_name):
+                self.spc[object] = space_carving_rotation_2d(
+                                                self.objects_path[i], 
+                                                object,
+                                                list_holes=list_holes[object],
+                                                continuous=self.continuous)
+        else:
+            for i, object in enumerate(objects_name):
+                self.spc[object] = space_carving_rotation_2d(
+                                                self.objects_path[i], 
+                                                object,
+                                                voxel_weights=voxel_weights[object],
+                                                continuous=self.continuous)
         self.max_reward = rmax
         self.k_t = k_t #penalty based on number of views
-
-        self.sphere_radius = 5
-        self.opt_theta = np.pi*np.array([1/2,1/4,3/4,1/2,1/4,3/4])
-        self.opt_phi = np.pi*np.array([0,1/2,1/2,1,-1/2,-1/2])
-        self.opt_pos = angle_to_position_continuous(self.opt_theta, self.opt_phi).T
 
         self.img_shape = img_shape # for reshaping images
 
@@ -90,13 +96,16 @@ class SphereEnv(dm_env.Environment):
         self.visited_positions.append([self.current_theta, self.current_phi])
 
         # create space carving objects
-        self.spc.reset()
+        obj = np.random.choice(self.objects_name)
+        self.current_obj = obj
+        self.current_spc = self.spc[obj]
+        self.current_spc.reset()
 
         if self.use_img:
             if self.continuous:
-                img = self.spc.get_image_continuous(self.current_theta, self.current_phi)
+                img = self.current_spc.get_image_continuous(self.current_theta, self.current_phi)
             else:
-                img = self.spc.get_image(self.current_theta, self.current_phi)
+                img = self.current_spc.get_image(self.current_theta, self.current_phi)
 
             pil_img = Image.fromarray(img).resize((self.img_shape, self.img_shape), Image.Resampling.NEAREST)
             self.img = np.array(pil_img)
@@ -107,7 +116,7 @@ class SphereEnv(dm_env.Environment):
             self.canny = canny 
                         
             self.last_k_img = np.stack([self.canny]*self.last_k, axis=0) # shape (k,img_size,img_size,1)
-            self.observation = self.last_k_img
+            self.observation = self.last_k_img*1.
         
         else:
             if self.continuous:
@@ -128,11 +137,11 @@ class SphereEnv(dm_env.Environment):
 
         self.visited_positions.append([self.current_theta, self.current_phi])
         if self.continuous:
-            self.spc.continuous_carve(self.current_theta, self.current_phi)
+            self.current_spc.continuous_carve(self.current_theta, self.current_phi)
         else:
-            self.spc.carve(self.current_theta, self.current_phi)
+            self.current_spc.carve(self.current_theta, self.current_phi)
 
-        self.reward = self.spc.gt_compare()
+        self.reward = self.current_spc.gt_compare()
         self.total_reward += self.reward
 
         if self.mode == 'train':
@@ -145,9 +154,9 @@ class SphereEnv(dm_env.Environment):
 
         if self.use_img:
             if self.continuous:
-                img = self.spc.img
+                img = self.current_spc.img
             else:
-                img = self.spc.get_image(self.current_theta, self.current_phi)
+                img = self.current_spc.get_image(self.current_theta, self.current_phi)
 
             pil_img = Image.fromarray(img).resize((self.img_shape, self.img_shape), Image.Resampling.NEAREST)
             self.img = np.array(pil_img)
@@ -161,7 +170,7 @@ class SphereEnv(dm_env.Environment):
             temp[:2] = self.last_k_img[1:]
             temp[2] = canny[None]
             self.last_k_img = temp
-            self.observation = self.last_k_img
+            self.observation = self.last_k_img*1.
         
         else:
             if self.continuous:
