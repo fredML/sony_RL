@@ -36,7 +36,7 @@ class SAC(OffPolicyActorCritic):
         batch_size=32,
         start_steps=1000,
         update_interval=1,
-        update_interval_target=1000,
+        update_interval_target=None,
         tau=5e-3,
         fn_actor=None,
         fn_critic=None,
@@ -230,7 +230,10 @@ class SAC(OffPolicyActorCritic):
         )
 
         # Update target network.
-        if self.agent_step % self.update_interval_target == 0:
+        if self.update_interval_target:
+            if self.agent_step % self.update_interval_target == 0:
+                self.params_critic_target = self._update_target(self.params_critic_target, self.params_critic)
+        else:
             self.params_critic_target = self._update_target(self.params_critic_target, self.params_critic)
 
         if writer and self.agent_step % 1000 == 0:

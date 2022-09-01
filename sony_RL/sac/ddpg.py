@@ -43,7 +43,7 @@ class DDPG(OffPolicyActorCritic):
         units_critic=(256, 256),
         d2rl=False,
         std=0.1,
-        update_interval_policy=1000,
+        update_interval_policy=2,
     ):
         super(DDPG, self).__init__(
             num_agent_steps=num_agent_steps,
