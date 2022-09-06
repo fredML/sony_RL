@@ -250,6 +250,24 @@ def load_object(fname):
 # ob = bpy.data.objects['Lamp']
 # ob.hide_render = True
 
+def delete_scene_objects(scene=None):
+    """Delete a scene and all its objects."""
+    #
+    # Sort out the scene object.
+    if scene is None:
+        # Not specified: it's the current scene.
+        scene = bpy.data.scenes["Scene"]
+    else:
+        if isinstance(scene, str):
+            # Specified by name: get the scene object.
+            scene = bpy.data.scenes[scene]
+        # Otherwise, assume it's a scene object already.
+    #
+    # Remove objects.
+    for object_ in scene.objects:
+        bpy.data.objects.remove(object_, do_unlink=True)
+    #
+    
 
 # using the cycles rendering engine for hdri backgrounds
 def setup_hdri():
@@ -412,6 +430,15 @@ class CameraExtrinsics(Resource):
         R,T= get_RT()
         return  {"R":R,"T":T}
 
+class STLtoOBJ(Resource):
+    def get(self):
+        stl_file = request.args.get('stl')
+        print(stl_file)
+        obj_file = request.args.get('obj')
+        delete_scene_objects()
+        bpy.ops.import_mesh.stl(filepath=stl_file)
+        bpy.ops.export_scene.obj(filepath=obj_file)
+        delete_scene_objects()
 
 app = Flask(__name__)
 api = Api(app)
@@ -427,6 +454,7 @@ api.add_resource(CameraSetup, '/camera')
 api.add_resource(CameraIntrinsics, '/camera_intrinsics')
 api.add_resource(CameraExtrinsics, '/camera_extrinsics')
 api.add_resource(BoundingBox, '/bounding_box')
+api.add_resource(STLtoOBJ, '/stlobj')
 
 bpy.context.scene.render.threads = 4
 bpy.context.scene.render.engine = 'CYCLES'
