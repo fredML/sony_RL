@@ -18,10 +18,12 @@ class SphereEnv(dm_env.Environment):
         last_k=3, 
         voxel_weights=None, 
         list_holes=None,
-        rmax=0.9, 
+        rmax_T=1, 
         k_t=0, 
         mode='eval', 
-        max_T=50):
+        max_T=50,
+        phi_n_positions=180,
+        theta_n_positions=4):
 
         super(SphereEnv, self).__init__()
         self.objects_path = objects_path
@@ -43,7 +45,7 @@ class SphereEnv(dm_env.Environment):
                                                 object,
                                                 voxel_weights=voxel_weights[object],
                                                 continuous=self.continuous)
-        self.max_reward = rmax
+        self.rmax_T = rmax_T
         self.k_t = k_t #penalty based on number of views
 
         self.img_shape = img_shape # for reshaping images
@@ -53,12 +55,12 @@ class SphereEnv(dm_env.Environment):
         self.use_img = use_img
         self.max_T = max_T
 
-        self.phi_n_positions = 180
-        self.theta_n_positions = 4
+        self.phi_n_positions = phi_n_positions
+        self.theta_n_positions = theta_n_positions
 
         self.actions = {}
         compt = 0
-        for k in range (4):
+        for k in range (theta_n_positions):
             for j in range (-15, 20, 5):
                 self.actions[compt] = (k, j)
                 compt += 1
@@ -66,6 +68,7 @@ class SphereEnv(dm_env.Environment):
     def reset(self, theta_init=-1, phi_init=-1) -> dm_env.TimeStep:
         self.num_steps = 0
         self.total_reward = 0
+        self.done = False
 
         # keep track of visited positions during the episode
         self.visited_positions = []
@@ -100,6 +103,7 @@ class SphereEnv(dm_env.Environment):
         self.current_obj = obj
         self.current_spc = self.spc[obj]
         self.current_spc.reset()
+        self.current_rmax_inf = self.current_spc.rmax_inf
 
         if self.use_img:
             if self.continuous:
@@ -122,7 +126,8 @@ class SphereEnv(dm_env.Environment):
             if self.continuous:
                 pos = angle_to_position_continuous(self.current_theta, self.current_phi)
             else:
-                pos = angle_to_position_continuous((self.current_theta+1)*np.pi/8, self.current_phi*np.pi/90)
+                pos = angle_to_position_continuous((self.current_theta+1)*np.pi/(2*self.theta_n_positions),
+                                                    self.current_phi*2*np.pi/self.phi_n_positions)
             self.pos = pos
             self.last_k_pos = np.concatenate([pos]*self.last_k)
             self.observation = self.last_k_pos
@@ -142,6 +147,8 @@ class SphereEnv(dm_env.Environment):
             self.current_spc.carve(self.current_theta, self.current_phi)
 
         self.reward = self.current_spc.gt_compare()
+        if self.current_rmax_inf:
+            self.reward = self.reward/self.current_rmax_inf
         self.total_reward += self.reward
 
         if self.mode == 'train':
@@ -176,13 +183,15 @@ class SphereEnv(dm_env.Environment):
             if self.continuous:
                 pos = angle_to_position_continuous(self.current_theta, self.current_phi)
             else:
-                pos = angle_to_position_continuous((self.current_theta+1)*np.pi/8, self.current_phi*np.pi/90)
+                pos = angle_to_position_continuous((self.current_theta+1)*np.pi/(2*self.theta_n_positions),
+                                                    self.current_phi*2*np.pi/self.phi_n_positions)
                 
             self.pos = pos
             self.last_k_pos = np.concatenate((self.last_k_pos[3:], pos))
             self.observation = self.last_k_pos
 
-        if self.total_reward > self.max_reward:
+        if self.total_reward > self.rmax_T:
+            self.done = True
             return dm_env.termination(reward=self.reward, observation=self.observation)
 
         if self.num_steps > self.max_T: # for "non-environmental" time limits, it might be better to still bootstrap

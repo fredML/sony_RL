@@ -27,7 +27,10 @@ class space_carving_rotation_2d():
         self.n_dilation = params["sc"]["n_dilation"]
         self.voxel_size = params['sc']['voxel_size']
         self.radius = params['traj']['R']
-        self.hole_radius = 0.25
+        self.rmax_inf = None
+        if 'rmax_inf' in params['train'].keys():
+            self.rmax_inf = params['train']['rmax_inf']
+        self.hole_radius = 0.4
 
         self.origin, self.sc, self.last_volume = set_sc(self.bbox, self.voxel_size)
         self.vol_shape = self.sc.values().shape
@@ -38,13 +41,12 @@ class space_carving_rotation_2d():
         else:
             from scipy.spatial.transform import Rotation as Rot
             self.voxel_weights = np.zeros(self.vol_shape)
+            self.list_holes = list_holes
             origin_pos = np.array([5,0,0])
             neigh_xyz = origin_pos + np.array([[-h,r*np.cos(theta),r*np.sin(theta)] for theta in
             np.linspace(0,2*np.pi,10) for r in np.linspace(0,self.hole_radius,10) for h in np.linspace(1,9,30)])
             self.neigh_ijk = []
             self.pos = []
-            self.neigh_ijk.append((neigh_xyz - self.origin)/self.voxel_size)
-            self.pos.append(origin_pos)
             for i in list_holes:
                 a, b = i
                 a = np.pi/2 - a
