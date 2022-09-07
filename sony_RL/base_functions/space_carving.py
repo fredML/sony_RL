@@ -30,7 +30,7 @@ class space_carving_rotation_2d():
         self.rmax_inf = None
         if 'rmax_inf' in params['train'].keys():
             self.rmax_inf = params['train']['rmax_inf']
-        self.hole_radius = 0.4
+        self.hole_radius = 0.1
 
         self.origin, self.sc, self.last_volume = set_sc(self.bbox, self.voxel_size)
         self.vol_shape = self.sc.values().shape
@@ -44,17 +44,19 @@ class space_carving_rotation_2d():
             self.list_holes = list_holes
             origin_pos = np.array([5,0,0])
             neigh_xyz = origin_pos + np.array([[-h,r*np.cos(theta),r*np.sin(theta)] for theta in
-            np.linspace(0,2*np.pi,10) for r in np.linspace(0,self.hole_radius,10) for h in np.linspace(1,9,30)])
+            np.linspace(0,2*np.pi,10) for r in np.linspace(0,self.hole_radius,10) for h in np.linspace(2,8,30)])
             self.neigh_ijk = []
             self.pos = []
             for i in list_holes:
                 a, b = i
-                a = np.pi/2 - a
-                if b>np.pi:
+                '''a = np.pi/2 - a
+                if b > np.pi:
                     b -= np.pi
-                    a = -a
+                    a = -a'''
+                a -= np.pi/2
+                v = np.array([-np.sin(b),np.cos(b),0])
                 r1 = Rot.from_rotvec([0,0,b])
-                r2 = Rot.from_rotvec([a,0,0])
+                r2 = Rot.from_rotvec(a*v)
                 r = r2*r1
                 new_pos = r.apply(origin_pos)
                 new_neigh_xyz = r.apply(neigh_xyz)
