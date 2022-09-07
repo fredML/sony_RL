@@ -29,22 +29,9 @@ class SphereEnv(dm_env.Environment):
         self.objects_path = objects_path
         self.objects_name = objects_name
         self.voxel_weights = voxel_weights
+        self.list_holes = list_holes
         self.continuous = continuous
-        self.spc = {}
-        if voxel_weights is None:
-            for i, object in enumerate(objects_name):
-                self.spc[object] = space_carving_rotation_2d(
-                                                self.objects_path[i], 
-                                                object,
-                                                list_holes=list_holes[object],
-                                                continuous=self.continuous)
-        else:
-            for i, object in enumerate(objects_name):
-                self.spc[object] = space_carving_rotation_2d(
-                                                self.objects_path[i], 
-                                                object,
-                                                voxel_weights=voxel_weights[object],
-                                                continuous=self.continuous)
+
         self.rmax_T = rmax_T
         self.k_t = k_t #penalty based on number of views
 
@@ -65,7 +52,7 @@ class SphereEnv(dm_env.Environment):
                 self.actions[compt] = (k, j)
                 compt += 1
 
-    def reset(self, theta_init=-1, phi_init=-1) -> dm_env.TimeStep:
+    def reset(self, obj=None, theta_init=-1, phi_init=-1) -> dm_env.TimeStep:
         self.num_steps = 0
         self.total_reward = 0
         self.done = False
@@ -99,9 +86,21 @@ class SphereEnv(dm_env.Environment):
         self.visited_positions.append([self.current_theta, self.current_phi])
 
         # create space carving objects
-        obj = np.random.choice(self.objects_name)
+        if obj is None:
+            obj = np.random.choice(len(self.objects_name))
+        if self.voxel_weights is None:
+            self.current_spc = space_carving_rotation_2d(
+                                                self.objects_path[obj], 
+                                                self.objects_name[obj],
+                                                list_holes=self.list_holes[obj],
+                                                continuous=self.continuous)
+        else:        
+            self.current_spc = space_carving_rotation_2d(
+                                                self.objects_path[obj], 
+                                                self.objects_name[obj],
+                                                voxel_weights=self.voxel_weights[obj],
+                                                continuous=self.continuous)
         self.current_obj = obj
-        self.current_spc = self.spc[obj]
         self.current_spc.reset()
         self.current_rmax_inf = self.current_spc.rmax_inf
 
