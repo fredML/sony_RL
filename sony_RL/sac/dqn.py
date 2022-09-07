@@ -170,7 +170,7 @@ class DQN(QLearning):
         next_state: np.ndarray,
     ) -> jnp.ndarray:
         if self.double_q:
-            next_action = self._forward(params, next_state)[..., None]
+            next_action = jnp.argmax(self.net_apply(params, next_state), axis=1)[..., None]
             next_q = self._calculate_value(params_target, next_state, next_action)
         else:
             next_q = jnp.max(self.net_apply(params_target, next_state), axis=-1, keepdims=True)
