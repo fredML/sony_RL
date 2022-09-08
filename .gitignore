@@ -11,3 +11,6 @@
 *.csv
 *.pollux
 *.castor
+*.scad
+*.stl
+*.mtl
