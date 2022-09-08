@@ -27,7 +27,10 @@ class space_carving_rotation_2d():
         self.n_dilation = params["sc"]["n_dilation"]
         self.voxel_size = params['sc']['voxel_size']
         self.radius = params['traj']['R']
-        self.hole_radius = 0.25
+        self.rmax_inf = None
+        if 'rmax_inf' in params['train'].keys():
+            self.rmax_inf = params['train']['rmax_inf']
+        self.hole_radius = 0.1
 
         self.origin, self.sc, self.last_volume = set_sc(self.bbox, self.voxel_size)
         self.vol_shape = self.sc.values().shape
@@ -38,16 +41,22 @@ class space_carving_rotation_2d():
         else:
             from scipy.spatial.transform import Rotation as Rot
             self.voxel_weights = np.zeros(self.vol_shape)
+            self.list_holes = list_holes
             origin_pos = np.array([5,0,0])
             neigh_xyz = origin_pos + np.array([[-h,r*np.cos(theta),r*np.sin(theta)] for theta in
-            np.linspace(0,2*np.pi,10) for r in np.linspace(0,self.hole_radius,10) for h in np.linspace(1,9,30)])
+            np.linspace(0,2*np.pi,10) for r in np.linspace(0,self.hole_radius,10) for h in np.linspace(2,8,30)])
             self.neigh_ijk = []
-            self.neigh_ijk.append((neigh_xyz - self.origin)/self.voxel_size)
-            self.pos = [origin_pos]
+            self.pos = []
             for i in list_holes:
                 a, b = i
+                '''a = np.pi/2 - a
+                if b > np.pi:
+                    b -= np.pi
+                    a = -a'''
+                a -= np.pi/2
+                v = np.array([-np.sin(b),np.cos(b),0])
                 r1 = Rot.from_rotvec([0,0,b])
-                r2 = Rot.from_rotvec([a,0,0])
+                r2 = Rot.from_rotvec(a*v)
                 r = r2*r1
                 new_pos = r.apply(origin_pos)
                 new_neigh_xyz = r.apply(neigh_xyz)
@@ -113,9 +122,9 @@ class space_carving_rotation_2d():
         return img
 
     def get_image_continuous(self, theta, phi):
-        img = rlviewer.grab(self.radius, np.pi/2 - theta, phi) 
+        img = rlviewer.grab(self.radius, theta-np.pi/2, phi+np.pi) 
         #self.extrinsics = make_extrinsics(self.radius, angle_to_position_continuous(theta, phi), up = np.array([0,0,1.]))
-        M = rlviewer.get_matrix(self.radius, np.pi/2 - theta, phi).T
+        M = rlviewer.get_matrix(self.radius, theta-np.pi/2, phi+np.pi).T
         self.extrinsics = {'R':M[:3,:3], 'T':-M[:3,3]}
         return img
 
@@ -179,3 +188,4 @@ class space_carving_rotation_2d():
         
         ratio = n_intersection / (self.gt_n_solid_voxels + vol_n_solid_voxels - n_intersection)
         return ratio
+
