@@ -230,11 +230,8 @@ class SAC(OffPolicyActorCritic):
         )
 
         # Update target network.
-        if self.update_interval_target:
-            if self.agent_step % self.update_interval_target == 0:
-                self.params_critic_target = self._update_target(self.params_critic_target, self.params_critic)
-        else:
-            self.params_critic_target = self._update_target(self.params_critic_target, self.params_critic)
+        
+        self.params_critic_target = self._update_target(self.params_critic_target, self.params_critic)
 
         if writer and self.agent_step % 1000 == 0:
             writer.add_scalar("episode/target_q", target.mean(), self.agent_step)
@@ -244,7 +241,7 @@ class SAC(OffPolicyActorCritic):
             writer.add_scalar("episode/mean_action", mean_action.mean(), self.agent_step)
             writer.add_scalar("episode/std_action", std_action.mean(), self.agent_step)
             writer.add_scalar("loss/critic", loss_critic, self.agent_step)
-            writer.add_scalar("loss/actor", loss_actor, self.agent_step)
+            writer.add_scalar("loss/actor", -loss_actor, self.agent_step)
             writer.add_scalar("loss/alpha", loss_alpha, self.agent_step)
             writer.add_scalar("stat/alpha", jnp.exp(self.log_alpha), self.agent_step)
             writer.add_scalar("stat/entropy", -mean_log_pi, self.agent_step)
