@@ -103,6 +103,7 @@ class SphereEnv(dm_env.Environment):
         self.current_obj = obj
         self.current_spc.reset()
         self.current_rmax_inf = self.current_spc.rmax_inf
+        self.n_goals = self.remaining_goals = len(self.list_holes[obj])*1.
 
         if self.use_img:
             if self.continuous:
@@ -119,7 +120,9 @@ class SphereEnv(dm_env.Environment):
             self.canny = canny 
                         
             self.last_k_img = np.stack([self.canny]*self.last_k, axis=0) # shape (k,img_size,img_size,1)
-            self.observation = self.last_k_img*1.
+            self.observation = self.last_k_img
+            self.remaining_goals_img = self.remaining_goals*np.ones_like(canny[None])
+            self.observation = np.concatenate((self.observation, np.tanh(self.remaining_goals_img)))
         
         else:
             if self.continuous:
@@ -131,11 +134,9 @@ class SphereEnv(dm_env.Environment):
             self.last_k_pos = np.concatenate([pos]*self.last_k)
             self.observation = self.last_k_pos
 
-        #self.observation = np.concatenate((self.observation,np.tanh(self.max_T-self.num_steps)*np.ones_like(self.observation)),
-        #                                  axis=-1)
         self.observation_shape = self.observation.shape
 
-        return dm_env.restart(self.observation)
+        return dm_env.restart(self.observation*1.)
 
     def _step(self):
 
@@ -150,13 +151,11 @@ class SphereEnv(dm_env.Environment):
             self.reward = self.reward/self.current_rmax_inf
         self.total_reward += self.reward
 
-        if self.mode == 'train':
-            self.opt_dist = np.linalg.norm(self.pos - self.opt_pos, axis=1)
-            self.reward += 0.05/(1+np.min(self.opt_dist))
-            self.reward -= self.k_t
-        
-        #self.observation = np.concatenate((self.observation,np.tanh(self.max_T-self.num_steps)*np.ones_like(self.observation)),
-        #                                  axis=-1)
+        self.remaining_goals = int(self.n_goals - self.total_reward//(1/self.n_goals))
+
+        if self.reward == 0:
+            if self.mode == 'train':
+                self.reward -= self.k_t
 
         if self.use_img:
             if self.continuous:
@@ -176,7 +175,9 @@ class SphereEnv(dm_env.Environment):
             temp[:2] = self.last_k_img[1:]
             temp[2] = canny[None]
             self.last_k_img = temp
-            self.observation = self.last_k_img*1.
+            self.observation = self.last_k_img
+            self.remaining_goals_img = self.remaining_goals*np.ones_like(canny[None])
+            self.observation = np.concatenate((self.observation, np.tanh(self.remaining_goals_img)))
         
         else:
             if self.continuous:
@@ -189,12 +190,12 @@ class SphereEnv(dm_env.Environment):
             self.last_k_pos = np.concatenate((self.last_k_pos[3:], pos))
             self.observation = self.last_k_pos
 
-        if self.total_reward > self.rmax_T:
+        if (self.total_reward > self.rmax_T) or (self.remaining_goals == 0):
             self.done = True
-            return dm_env.termination(reward=self.reward, observation=self.observation)
+            return dm_env.termination(reward=self.reward, observation=self.observation*1.)
 
         if self.num_steps > self.max_T: # for "non-environmental" time limits, it might be better to still bootstrap
-            ts = dm_env.transition(reward=self.reward, observation=self.observation)
+            ts = dm_env.transition(reward=self.reward, observation=self.observation*1.)
             self.reset()
             return ts
 
