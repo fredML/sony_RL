@@ -100,6 +100,8 @@ class SAC(OffPolicyActorCritic):
                     d2rl=d2rl,
                 )(s)
 
+        self.use_goal = use_goal
+
         critic_init, critic_apply = hk.without_apply_rng(hk.transform(fn_critic))
         self.critic_apply_jit = jax.jit(critic_apply)
         actor_init, actor_apply = hk.without_apply_rng(hk.transform(fn_actor))
@@ -107,17 +109,19 @@ class SAC(OffPolicyActorCritic):
 
         dummy_state = np.random.uniform(0,1,state_space.shape)[None]
         dummy_action = np.random.uniform(-1,1,len(action_space.shape))[None]
-        self.use_goal = use_goal
 
         self.encoder = encoder
         if encoder is not None:
             vae_apply_jit, params_vae, bn_vae_state = self.encoder
-            dummy_state, _ = vae_apply_jit(params_vae, bn_vae_state, np.random.uniform(0,1,state_space.shape), False)
+            if self.use_goal:
+                dummy_state, dummy_goal = dummy_state[:,:-1,...], dummy_state[:,-1,0,0]
+            dummy_state = dummy_state[0]
+            dummy_state, _ = vae_apply_jit(params_vae, bn_vae_state, dummy_state, False)
             dummy_state = dummy_state[2]
             dummy_state = dummy_state.reshape((1,-1))
             if self.use_goal:
-                dummy_state = jnp.concatenate((dummy_state, np.zeros((len(dummy_state), 1))), axis=1)
-
+                dummy_state = jnp.concatenate((dummy_state, dummy_goal), axis=1)
+        
         self.params_critic = self.params_critic_target = critic_init(next(self.rng), 
                                                                           dummy_state,
                                                                           dummy_action)                                                                                
@@ -144,7 +148,7 @@ class SAC(OffPolicyActorCritic):
         state: np.ndarray,
     ) -> jnp.ndarray:
         if self.use_goal:
-            state, goal = state[:,:3,...], state[:,3,0,0]
+            state, goal = state[:,:-1,...], state[:,-1,0,0]
         if self.encoder is not None:
             state = jnp.reshape(state, (-1, *self.state_space.shape[1:]))
             vae_apply_jit, params_vae, bn_vae_state = self.encoder
@@ -154,7 +158,7 @@ class SAC(OffPolicyActorCritic):
             if self.use_goal:
                 state = jnp.concatenate((state, goal), axis=1)
         mean, _ = self.actor_apply_jit(params_actor, state)
-        return jnp.tanh(mean)
+        return jnp.pi/4*jnp.tanh(mean)
 
     @partial(jax.jit, static_argnums=0)
     def _explore(
@@ -174,7 +178,7 @@ class SAC(OffPolicyActorCritic):
             if self.use_goal:
                 state = jnp.concatenate((state, goal), axis=1)
         mean, log_std = self.actor_apply_jit(params_actor, state)
-        return reparameterize_gaussian_and_tanh(mean, log_std, key, False)
+        return jnp.pi/4*reparameterize_gaussian_and_tanh(mean, log_std, key, False)
 
     def update(self, writer=None):
         self.learning_step += 1
@@ -281,7 +285,7 @@ class SAC(OffPolicyActorCritic):
             state = jnp.reshape(state, (1, -1))'''
         mean, log_std = self.actor_apply_jit(params_actor, state)
         action, log_pi = reparameterize_gaussian_and_tanh(mean, log_std, key, True)
-        return action, log_pi, mean, jnp.exp(log_std)
+        return jnp.pi/4*action, log_pi, mean, jnp.exp(log_std)
 
     @partial(jax.jit, static_argnums=0)
     def _calculate_log_pi(

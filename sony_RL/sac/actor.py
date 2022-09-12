@@ -23,7 +23,7 @@ class DeterministicPolicy(hk.Module):
         self.d2rl = d2rl
 
     def __call__(self, x):
-        return MLP(
+        return jnp.pi/4*MLP(
             len(self.action_space.shape),
             self.hidden_units,
             hidden_activation=nn.relu,

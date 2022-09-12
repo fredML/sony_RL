@@ -13,7 +13,8 @@ class SphereEnv(dm_env.Environment):
         objects_path, 
         objects_name,
         img_shape, 
-        use_img=True, 
+        use_img=True,
+        use_goal=False, 
         continuous=True, 
         last_k=3, 
         voxel_weights=None, 
@@ -33,14 +34,14 @@ class SphereEnv(dm_env.Environment):
         self.continuous = continuous
 
         self.rmax_T = rmax_T
-        self.k_t = k_t #penalty based on number of views
-
         self.img_shape = img_shape # for reshaping images
-
         self.last_k = last_k
-        self.mode = mode
-        self.use_img = use_img
         self.max_T = max_T
+
+        self.mode = mode
+        self.k_t = k_t #penalty based on number of views
+        self.use_img = use_img
+        self.use_goal = use_goal
 
         self.phi_n_positions = phi_n_positions
         self.theta_n_positions = theta_n_positions
@@ -121,8 +122,9 @@ class SphereEnv(dm_env.Environment):
                         
             self.last_k_img = np.stack([self.canny]*self.last_k, axis=0) # shape (k,img_size,img_size,1)
             self.observation = self.last_k_img
-            self.remaining_goals_img = self.remaining_goals*np.ones_like(canny[None])
-            self.observation = np.concatenate((self.observation, np.tanh(self.remaining_goals_img)))
+            if self.use_goal:
+                self.remaining_goals_img = self.remaining_goals*np.ones_like(canny[None])
+                self.observation = np.concatenate((self.observation, np.tanh(self.remaining_goals_img)))
         
         else:
             if self.continuous:
@@ -170,14 +172,18 @@ class SphereEnv(dm_env.Environment):
 
             canny = cv.Canny(img_gray, 40, 80)[...,None] 
             self.canny = canny
-                                                    
-            temp = np.empty(self.observation_shape)
+
+            if self.use_goal:
+                temp = np.empty(self.observation_shape)[1:]
+            else:
+                temp = np.empty(self.observation_shape)
             temp[:2] = self.last_k_img[1:]
             temp[2] = canny[None]
             self.last_k_img = temp
             self.observation = self.last_k_img
-            self.remaining_goals_img = self.remaining_goals*np.ones_like(canny[None])
-            self.observation = np.concatenate((self.observation, np.tanh(self.remaining_goals_img)))
+            if self.use_goal:
+                self.remaining_goals_img = self.remaining_goals*np.ones_like(canny[None])
+                self.observation = np.concatenate((self.observation, np.tanh(self.remaining_goals_img)))
         
         else:
             if self.continuous:
@@ -190,7 +196,11 @@ class SphereEnv(dm_env.Environment):
             self.last_k_pos = np.concatenate((self.last_k_pos[3:], pos))
             self.observation = self.last_k_pos
 
-        if (self.total_reward > self.rmax_T) or (self.remaining_goals == 0):
+        if self.total_reward > self.rmax_T:
+            self.done = True
+            return dm_env.termination(reward=self.reward, observation=self.observation*1.)
+        
+        if (self.use_goal == True) & (self.remaining_goals == 0):
             self.done = True
             return dm_env.termination(reward=self.reward, observation=self.observation*1.)
 
