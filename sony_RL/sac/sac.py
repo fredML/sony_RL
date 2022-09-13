@@ -158,7 +158,7 @@ class SAC(OffPolicyActorCritic):
             if self.use_goal:
                 state = jnp.concatenate((state, goal), axis=1)
         mean, _ = self.actor_apply_jit(params_actor, state)
-        return jnp.pi/4*jnp.tanh(mean)
+        return jnp.pi/6*jnp.tanh(mean)
 
     @partial(jax.jit, static_argnums=0)
     def _explore(
@@ -178,7 +178,7 @@ class SAC(OffPolicyActorCritic):
             if self.use_goal:
                 state = jnp.concatenate((state, goal), axis=1)
         mean, log_std = self.actor_apply_jit(params_actor, state)
-        return jnp.pi/4*reparameterize_gaussian_and_tanh(mean, log_std, key, False)
+        return jnp.pi/6*reparameterize_gaussian_and_tanh(mean, log_std, key, False)
 
     def update(self, writer=None):
         self.learning_step += 1
@@ -285,7 +285,7 @@ class SAC(OffPolicyActorCritic):
             state = jnp.reshape(state, (1, -1))'''
         mean, log_std = self.actor_apply_jit(params_actor, state)
         action, log_pi = reparameterize_gaussian_and_tanh(mean, log_std, key, True)
-        return jnp.pi/4*action, log_pi, mean, jnp.exp(log_std)
+        return jnp.pi/6*action, log_pi, mean, jnp.exp(log_std)
 
     @partial(jax.jit, static_argnums=0)
     def _calculate_log_pi(

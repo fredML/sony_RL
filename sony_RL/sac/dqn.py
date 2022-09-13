@@ -21,6 +21,7 @@ class DQN(QLearning):
         state_space,
         action_space,
         seed,
+        use_goal=False,
         encoder=None,
         max_grad_norm=None,
         gamma=0.99,
@@ -33,7 +34,7 @@ class DQN(QLearning):
         update_interval_target=1000,
         eps=0.01,
         eps_eval=0.001,
-        eps_decay_steps=50000,
+        eps_decay_steps=100000,
         loss_type="l2",
         dueling_net=False,
         double_q=False,
@@ -73,18 +74,27 @@ class DQN(QLearning):
                         dueling_net=dueling_net,
                     )(s)
 
-            net_init, net_apply = hk.without_apply_rng(hk.transform(fn))
-            self.net_apply = jax.jit(net_apply)
-            self.encoder = encoder
-            dummy_state = np.random.uniform(0, 1, state_space.shape)[None]
-            if encoder is not None:
-                vae_apply_jit, params_vae, bn_vae_state = self.encoder
-                dummy_state, _ = vae_apply_jit(params_vae, bn_vae_state, np.random.uniform(0,1,state_space.shape), False)
-                dummy_state = dummy_state[2]
-                dummy_state = dummy_state.reshape((1,-1))
-            self.params = self.params_target = net_init(next(self.rng), dummy_state)
-            opt_init, self.opt = optax.adam(lr, eps=0.01 / batch_size)
-            self.opt_state = opt_init(self.params)
+        self.use_goal = use_goal
+        net_init, net_apply = hk.without_apply_rng(hk.transform(fn))
+        self.net_apply = jax.jit(net_apply)
+
+        dummy_state = np.random.uniform(0,1,state_space.shape)[None]
+
+        self.encoder = encoder
+        if encoder is not None:
+            vae_apply_jit, params_vae, bn_vae_state = self.encoder
+            if self.use_goal:
+                dummy_state, dummy_goal = dummy_state[:,:-1,...], dummy_state[:,-1,0,0]
+            dummy_state = dummy_state[0]
+            dummy_state, _ = vae_apply_jit(params_vae, bn_vae_state, dummy_state, False)
+            dummy_state = dummy_state[2]
+            dummy_state = dummy_state.reshape((1,-1))
+            if self.use_goal:
+                dummy_state = jnp.concatenate((dummy_state, dummy_goal), axis=1)
+
+        self.params = self.params_target = net_init(next(self.rng), dummy_state)
+        opt_init, self.opt = optax.adam(lr, eps=0.01 / batch_size)
+        self.opt_state = opt_init(self.params)
 
     @partial(jax.jit, static_argnums=0)
     def _forward(
@@ -92,12 +102,17 @@ class DQN(QLearning):
         params: hk.Params,
         state: np.ndarray,
     ) -> jnp.ndarray:
+        if self.use_goal:
+            state, goal = state[:,:-1,...], state[:,-1,0,0]
+
         if self.encoder is not None:
             state = jnp.reshape(state, (-1, *self.state_space.shape[1:]))
             vae_apply_jit, params_vae, bn_vae_state = self.encoder
             state, _ = vae_apply_jit(params_vae, bn_vae_state, state, False)
             state = state[2]
             state = jnp.reshape(state, (1, -1))
+            if self.use_goal:
+                state = jnp.concatenate((state, goal), axis=1)
         return jnp.argmax(self.net_apply(params, state), axis=1)
 
     def update(self, writer=None):
@@ -105,6 +120,10 @@ class DQN(QLearning):
         weight, batch = self.buffer.sample(self.batch_size)
         state, action, reward, done, next_state = batch
         action = np.uint8(action)
+
+        if self.use_goal:
+            state, goal = state[:,:-1,...], state[:,-1,0,0]
+            next_state, next_goal = next_state[:,:-1,...], next_state[:,-1,0,0]
 
         if self.encoder is not None:
 
@@ -119,6 +138,10 @@ class DQN(QLearning):
 
             state = jnp.reshape(state, (self.batch_size, -1)) # output of vae is (bs*k, latent_dim), need to reshape (bs,k*latent_dim)
             next_state = jnp.reshape(next_state, (self.batch_size, -1))
+
+            if self.use_goal:
+                state = jnp.concatenate((state, goal), axis=1)
+                next_state = jnp.concatenate((next_state, next_goal), axis=1)
 
         self.opt_state, self.params, loss, (abs_td, target, q) = optimize(
             self._loss,
