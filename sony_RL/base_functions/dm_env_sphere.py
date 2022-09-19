@@ -12,7 +12,7 @@ class SphereEnv(dm_env.Environment):
         self, 
         objects_path, 
         objects_name,
-        img_shape, 
+        img_shape=128, 
         use_img=True,
         use_goal=False, 
         continuous=True, 
@@ -20,11 +20,11 @@ class SphereEnv(dm_env.Environment):
         voxel_weights=None, 
         list_holes=None,
         rmax_T=1, 
-        k_t=0, 
+        k_t=0.1, 
         mode='eval', 
         max_T=50,
         phi_n_positions=180,
-        theta_n_positions=4):
+        theta_n_positions=8):
 
         super(SphereEnv, self).__init__()
         self.objects_path = objects_path
@@ -104,7 +104,8 @@ class SphereEnv(dm_env.Environment):
         self.current_obj = obj
         self.current_spc.reset()
         self.current_rmax_inf = self.current_spc.rmax_inf
-        self.n_goals = self.remaining_goals = len(self.list_holes[obj])*1.
+        if self.use_goal:
+            self.n_goals = self.remaining_goals = len(self.list_holes[obj])*1.
 
         if self.use_img:
             if self.continuous:
@@ -216,15 +217,15 @@ class SphereEnv(dm_env.Environment):
         self.num_steps += 1
         if self.continuous:
             theta, phi = action
-            self.current_theta = self.calculate_angle(self.current_theta, np.pi, theta)
-            self.current_phi = self.calculate_angle(self.current_phi, 2*np.pi, phi)
+            self.current_theta = self.calculate_angle_theta(self.current_theta, np.pi/2, theta)
+            self.current_phi = self.calculate_angle_phi(self.current_phi, 2*np.pi, phi)
         else:
             action = action.item()
             if isinstance(action, float): # add this cond for actions obtained by randomization (by default a float)
                 action = np.random.randint(len(self.actions))
             theta, phi = self.actions[action]
             self.current_theta = theta
-            self.current_phi = self.calculate_angle(self.current_phi, self.phi_n_positions, phi)
+            self.current_phi = self.calculate_angle_phi(self.current_phi, self.phi_n_positions, phi)
 
         return self._step()
 
@@ -236,58 +237,19 @@ class SphereEnv(dm_env.Environment):
 
         return self._step()
 
-    def calculate_angle(self, curr_angle, max_angle, steps):
-        n_pos = curr_angle + steps
-        if n_pos >= max_angle:
-            n_pos -= max_angle
+    def calculate_angle_phi(self, curr_phi, max_phi, dphi):
+        n_pos = curr_phi + dphi
+        if n_pos >= max_phi:
+            n_pos -= max_phi
         elif n_pos < 0:
-            n_pos += max_angle
+            n_pos += max_phi
         return n_pos
 
-    '''def segmentation_mask(self):
-
-        neigh_xyz = []
-        dtheta = 6*np.pi/180
-        dphi = 6*np.pi/180
-        for i in range(len(self.opt_theta)):
-            theta, phi = self.opt_theta[i], self.opt_phi[i]
-            for val_theta in np.linspace(theta-dtheta,theta+dtheta,50):
-                for val_phi in np.linspace(phi-dphi,phi+dphi,50):
-                    neigh_xyz.append(self.sphere_radius*angle_to_position_continuous(val_theta, val_phi))
-        
-        neigh_xyz = np.array(neigh_xyz)
-        self.neigh_xyz = neigh_xyz
-
-        segmentation_mask = np.zeros((1024,768))
-
-        distances = np.linalg.norm(self.pos - self.neigh_xyz, axis=1)
-        self.distances = distances
-        mask = np.where(distances < np.sqrt(self.spc.radius**2 + self.sphere_radius**2))
-        self.neigh_xyz = self.neigh_xyz[mask]
-
-        extrinsics = self.spc.extrinsics
-        R = np.array(extrinsics['R'])
-        T = np.array(extrinsics['T'])
-
-        pixels = R.dot(self.neigh_xyz.T) + T[...,None] #transform world coordinates to camera coordinates
-        mask = np.where(pixels[2]>0)
-        pixels = pixels[:,mask[0]]
-
-        K = self.spc.intrinsics
-        x = K[0]*pixels[0]/pixels[2] + K[2]
-        y = K[1]*pixels[1]/pixels[2] + K[3]
-        x = x.astype('int32')
-        y = y.astype('int32')
-
-        self.pixels = (x,y)
-
-        for i in range (len(x)):
-            segmentation_mask[x[i],y[i]] = 1
-        
-        segmentation_mask = segmentation_mask.T
-        pil_img = Image.fromarray(segmentation_mask).resize((self.img_shape, self.img_shape), PIL.Image.Resampling.NEAREST)
-
-        return np.array(pil_img)'''
+    def calculate_angle_theta(self, curr_theta, max_theta, dtheta):
+        n_pos = curr_theta + dtheta
+        if (n_pos > max_theta) or (n_pos <= 0):
+            n_pos = curr_theta
+        return n_pos
 
     def observation_spec(self) -> specs.BoundedArray:
         '''if (len(self.env_shape) == 3) & (self.apply_ae is None):
