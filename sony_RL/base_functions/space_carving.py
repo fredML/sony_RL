@@ -38,7 +38,7 @@ class space_carving_rotation_2d():
         if voxel_weights is not None:
             self.voxel_weights = voxel_weights
             self.neigh_ijk = np.where(voxel_weights==1)
-        else:
+        elif list_holes is not None:
             from scipy.spatial.transform import Rotation as Rot
             self.voxel_weights = np.zeros(self.vol_shape)
             self.list_holes = list_holes
@@ -67,7 +67,10 @@ class space_carving_rotation_2d():
             self.neigh_ijk = self.neigh_ijk.astype('int32')
 
             for i in self.neigh_ijk:
-                self.voxel_weights[i[0],i[1],i[2]] = 1     
+                self.voxel_weights[i[0],i[1],i[2]] = 1  
+
+        else:
+            self.voxel_weights = np.ones(self.vol_shape)   
 
         self.continuous = continuous
 

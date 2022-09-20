@@ -4,7 +4,6 @@ from typing import Tuple
 
 import jax
 import jax.numpy as jnp
-from jax.scipy.stats import norm
 import numpy as np
 from jax import nn
 
