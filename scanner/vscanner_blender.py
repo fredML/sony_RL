@@ -433,11 +433,12 @@ class CameraExtrinsics(Resource):
 class STLtoOBJ(Resource):
     def get(self):
         stl_file = request.args.get('stl')
-        print(stl_file)
         obj_file = request.args.get('obj')
+        axis_forward = request.args.get('forward')
+        axis_up = request.args.get('up')
         delete_scene_objects()
         bpy.ops.import_mesh.stl(filepath=stl_file)
-        bpy.ops.export_scene.obj(filepath=obj_file)
+        bpy.ops.export_scene.obj(filepath=obj_file, axis_forward=axis_forward, axis_up=axis_up)
         delete_scene_objects()
 
 app = Flask(__name__)
