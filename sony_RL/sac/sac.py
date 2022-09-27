@@ -155,6 +155,7 @@ class SAC(OffPolicyActorCritic):
             state, _ = vae_apply_jit(params_vae, bn_vae_state, state, False)
             state = state[2]
             state = jnp.reshape(state, (1, -1))
+            state = jnp.tanh(state)
             if self.use_goal:
                 state = jnp.concatenate((state, goal), axis=1)
         mean, _ = self.actor_apply_jit(params_actor, state)
@@ -175,6 +176,7 @@ class SAC(OffPolicyActorCritic):
             state, _ = vae_apply_jit(params_vae, bn_vae_state, state, False)
             state = state[2]
             state = jnp.reshape(state, (1, -1))
+            state = jnp.tanh(state)
             if self.use_goal:
                 state = jnp.concatenate((state, goal), axis=1)
         mean, log_std = self.actor_apply_jit(params_actor, state)
@@ -202,7 +204,9 @@ class SAC(OffPolicyActorCritic):
             next_state = next_state[2]
 
             state = jnp.reshape(state, (self.batch_size, -1)) # output of vae is (bs*k, latent_dim), need to reshape (bs,k*latent_dim)
+            state = jnp.tanh(state)
             next_state = jnp.reshape(next_state, (self.batch_size, -1))
+            next_state = jnp.tanh(next_state)
 
             if self.use_goal:
                 state = jnp.concatenate((state, goal), axis=1)
@@ -330,9 +334,9 @@ class SAC(OffPolicyActorCritic):
         **kwargs,
     ) -> Tuple[jnp.ndarray, jnp.ndarray]:
         next_action, next_log_pi, _, _ = self._sample_action(params_actor, next_state, *args, **kwargs)
-        action_pi, _, _, _ = self._sample_action(params_actor, state, *args, **kwargs)
+        #action_pi, _, _, _ = self._sample_action(params_actor, state, *args, **kwargs)
         target = self._calculate_target(params_critic_target, log_alpha, reward, done, next_state, next_action, next_log_pi)
-        q_list = self._calculate_value_list(params_critic, state, action_pi)
+        q_list = self._calculate_value_list(params_critic, state, action)
         q_val = jnp.asarray(q_list).min(axis=0)
         loss_critic, abs_td = self._calculate_loss_critic_and_abs_td(q_list, target, weight)
         return loss_critic, (abs_td, target, q_val)
@@ -344,7 +348,6 @@ class SAC(OffPolicyActorCritic):
         params_critic: hk.Params,
         log_alpha: jnp.ndarray,
         state: np.ndarray,
-        action: np.ndarray,
         *args,
         **kwargs,
     ) -> Tuple[jnp.ndarray, jnp.ndarray]:
