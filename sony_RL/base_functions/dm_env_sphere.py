@@ -154,7 +154,8 @@ class SphereEnv(dm_env.Environment):
             self.reward = self.reward/self.current_rmax_inf
         self.total_reward += self.reward
 
-        self.remaining_goals = int(self.n_goals - self.total_reward//(1/self.n_goals))
+        if self.use_goal:
+            self.remaining_goals = int(self.n_goals - self.total_reward//(1/self.n_goals))
 
         if self.reward == 0:
             if self.mode == 'train':
@@ -201,9 +202,10 @@ class SphereEnv(dm_env.Environment):
             self.done = True
             return dm_env.termination(reward=self.reward, observation=self.observation*1.)
         
-        if (self.use_goal == True) & (self.remaining_goals == 0):
-            self.done = True
-            return dm_env.termination(reward=self.reward, observation=self.observation*1.)
+        if self.use_goal == True:
+            if self.remaining_goals == 0:
+                self.done = True
+                return dm_env.termination(reward=self.reward, observation=self.observation*1.)
 
         if self.num_steps > self.max_T: # for "non-environmental" time limits, it might be better to still bootstrap
             ts = dm_env.transition(reward=self.reward, observation=self.observation*1.)

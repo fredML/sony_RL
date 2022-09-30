@@ -117,7 +117,10 @@ class SAC(OffPolicyActorCritic):
                 dummy_state, dummy_goal = dummy_state[:,:-1,...], dummy_state[:,-1,0,0]
             dummy_state = dummy_state[0]
             dummy_state, _ = vae_apply_jit(params_vae, bn_vae_state, dummy_state, False)
-            dummy_state = dummy_state[2]
+            dummy_state = dummy_state['latent_eval']
+            if len(dummy_state.shape)>2:
+                dummy_state = jnp.argmax(dummy_state, axis=-1)
+            dummy_state = jnp.tanh(dummy_state)
             dummy_state = dummy_state.reshape((1,-1))
             if self.use_goal:
                 dummy_state = jnp.concatenate((dummy_state, dummy_goal), axis=1)
@@ -153,9 +156,11 @@ class SAC(OffPolicyActorCritic):
             state = jnp.reshape(state, (-1, *self.state_space.shape[1:]))
             vae_apply_jit, params_vae, bn_vae_state = self.encoder
             state, _ = vae_apply_jit(params_vae, bn_vae_state, state, False)
-            state = state[2]
-            state = jnp.reshape(state, (1, -1))
+            state = state['latent_eval']
+            if len(state.shape)>2:
+                state = jnp.argmax(state, axis=-1)
             state = jnp.tanh(state)
+            state = jnp.reshape(state, (1, -1))
             if self.use_goal:
                 state = jnp.concatenate((state, goal), axis=1)
         mean, _ = self.actor_apply_jit(params_actor, state)
@@ -174,9 +179,11 @@ class SAC(OffPolicyActorCritic):
             state = jnp.reshape(state, (-1, *self.state_space.shape[1:]))
             vae_apply_jit, params_vae, bn_vae_state = self.encoder
             state, _ = vae_apply_jit(params_vae, bn_vae_state, state, False)
-            state = state[2]
-            state = jnp.reshape(state, (1, -1))
+            state = state['latent_eval']
+            if len(state.shape)>2:
+                state = jnp.argmax(state, axis=-1)
             state = jnp.tanh(state)
+            state = jnp.reshape(state, (1, -1))
             if self.use_goal:
                 state = jnp.concatenate((state, goal), axis=1)
         mean, log_std = self.actor_apply_jit(params_actor, state)
@@ -199,14 +206,18 @@ class SAC(OffPolicyActorCritic):
             vae_apply_jit, params_vae, bn_vae_state = self.encoder
 
             state, _ = vae_apply_jit(params_vae, bn_vae_state, state, False)
-            state = state[2]
+            state = state['latent_eval']
             next_state, _ = vae_apply_jit(params_vae, bn_vae_state, next_state, False)
-            next_state = next_state[2]
+            next_state = next_state['latent_eval']
 
-            state = jnp.reshape(state, (self.batch_size, -1)) # output of vae is (bs*k, latent_dim), need to reshape (bs,k*latent_dim)
+            if len(state.shape)>2:
+                state = jnp.argmax(state, axis=-1)
+                next_state = jnp.argmax(next_state, axis=-1)
+
             state = jnp.tanh(state)
-            next_state = jnp.reshape(next_state, (self.batch_size, -1))
             next_state = jnp.tanh(next_state)
+            state = jnp.reshape(state, (self.batch_size, -1)) # output of vae is (bs*k, latent_dim), need to reshape (bs,k*latent_dim)
+            next_state = jnp.reshape(next_state, (self.batch_size, -1))
 
             if self.use_goal:
                 state = jnp.concatenate((state, goal), axis=1)
@@ -245,7 +256,6 @@ class SAC(OffPolicyActorCritic):
             params_critic=self.params_critic,
             log_alpha=self.log_alpha,
             state=state,
-            action=action,
             **self.kwargs_actor,
         )
         # Update alpha.
@@ -286,7 +296,7 @@ class SAC(OffPolicyActorCritic):
             state = jnp.reshape(state, (-1, *self.state_space.shape[1:]))
             vae_apply_jit, params_vae, bn_vae_state = self.encoder
             state = vae_apply_jit(params_vae, bn_vae_state, state, False)
-            state = state[2]
+            state = state['latent_eval']
             state = jnp.reshape(state, (1, -1))'''
         mean, log_std = self.actor_apply_jit(params_actor, state)
         action, log_pi = reparameterize_gaussian_and_tanh(mean, log_std, key, True)

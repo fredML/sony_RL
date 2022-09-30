@@ -180,7 +180,7 @@ class VAE(hk.Module):
         latent = mu + np.random.normal(0, 1, size=sigma.shape)*sigma
         recons = self.decoder(latent, is_training)
 
-        return recons, latent, mu, log_var
+        return {'recons':recons, 'latent':latent, 'latent_eval':mu, 'log_var':log_var}
 
 class ResNetVAE(hk.Module):
     def __init__(self, latent_dim, filter_sizes, weights, pooling, output_channels, final_activation):
@@ -210,30 +210,31 @@ class ResNetVAE(hk.Module):
 
         recons = self.decoder(latent, encoder_bn_training)
 
-        return recons, latent, mu, log_var
+        return {'recons':recons, 'latent':latent, 'latent_eval':mu, 'log_var':log_var}
 
 ## categorical VAE with gumbel trick
 class CatVAE(hk.Module): 
 
-    def __init__(self, input_size, latent_dim, num_classes, filter_sizes, output_channels, final_activation):
+    def __init__(self, input_size, latent_dim, num_classes, filter_sizes, output_channels, final_activation, temp, coord_conv=True):
         super().__init__()
         self.latent_dim = latent_dim
         self.num_classes = num_classes
-        self.encoder = Encoder_AE(latent_dim*num_classes, filter_sizes)
+        self.temp = temp
+        self.encoder = Encoder(latent_dim*num_classes, filter_sizes, coord_conv)
         n = len(filter_sizes)
         last_conv_shape = input_size//2**n
-        self.decoder = Decoder(last_conv_shape, filter_sizes[::-1], output_channels, final_activation)
+        self.decoder = Decoder(last_conv_shape, filter_sizes[::-1], output_channels, final_activation, coord_conv)
 
-    def __call__(self, s, is_training, temperature):
-        latent, s = self.forward(s, is_training, temperature)
-        latent = latent.reshape(-1, self.latent_dim*self.num_classes)
+    def __call__(self, s, is_training):
+        latent, s = self.forward(s, is_training, self.temp)
+        latent_dec = latent.reshape(-1, self.latent_dim*self.num_classes)
 
-        recons = self.decoder(latent, is_training)
+        recons = self.decoder(latent_dec, is_training)
 
-        return recons, latent, s
+        return {'recons': recons, 'latent_eval':latent, 's':s}
 
     def forward(self, s, is_training, temperature, eps=1e-7):
-        s = self.encoder(s, is_training)
+        s, _ = self.encoder(s, is_training)
         s = s.reshape(-1, self.latent_dim, self.num_classes)
         u = np.random.uniform(0, 1, s.shape)
         g = -jnp.log(-jnp.log(u+eps)+eps)
@@ -245,7 +246,7 @@ def kl_gaussian(mean: jnp.ndarray, log_var: jnp.ndarray) -> jnp.ndarray:
 
   return 0.5 * jnp.sum(-log_var - 1.0 + jnp.exp(log_var) + jnp.square(mean), axis=-1).mean()
 
-def disantanglement_data(model, params, state, num_batches, batch_size, num_factors, h, w):
+def disantanglement_data(model, params, state, num_batches, batch_size, num_factors, h, w, *args, **kwargs):
     
     def generate_img(h, w, x, y, r=5):
         im = Image.new(mode='L',size=(h,w),color=0)
@@ -272,8 +273,10 @@ def disantanglement_data(model, params, state, num_batches, batch_size, num_fact
             batch_2.append(im_2)
         batch_1 = np.concatenate(batch_1).astype('float32')
         batch_2 = np.concatenate(batch_2).astype('float32')
-        _,_,z1,_ = model(params, state, batch_1, False)[0]
-        _,_,z2,_ = model(params, state, batch_2, False)[0]
+        res_1,_ = model(params, state, batch_1, False, *args, **kwargs)
+        z1 = res_1['latent_eval']
+        res_2, _ = model(params, state, batch_2, False, *args, **kwargs)
+        z2 = res_2['latent_eval']
         z_diff = np.mean(np.abs(z1-z2),axis=0)
         x.append(z_diff)
 
